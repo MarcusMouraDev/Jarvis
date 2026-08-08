@@ -1,0 +1,494 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MockVoiceAdapter } from "@/adapters/mock-voice";
+import {
+  getProviderForAlias,
+  jarvisConfig,
+  listModelAliases,
+} from "@/core/config";
+import { BudgetTracker, requiresConfirmation } from "@/core/policy";
+import { collectStream, routeTextRequest } from "@/core/router";
+import { recordTelemetry } from "@/core/telemetry";
+import type { AgentState, PrivacyClass } from "@/core/types";
+import { AgentStateMachine } from "@/state/agent-state";
+import { useAudioLevel } from "@/audio/use-audio-level";
+import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
+import { PresenceField } from "@/presence/PresenceField";
+import { Composer } from "./Composer";
+import { ConfirmOverlay } from "./ConfirmOverlay";
+import { FallbackStrip } from "./FallbackStrip";
+import { HistoryPanel, type ChatMessage } from "./HistoryPanel";
+import { InstrumentBar } from "./InstrumentBar";
+import { LastExchange } from "./LastExchange";
+import { StateLabel } from "./StateLabel";
+
+function detectWebGL(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      canvas.getContext("webgl") || canvas.getContext("experimental-webgl")
+    );
+  } catch {
+    return false;
+  }
+}
+
+const BUDGET_USD = 2;
+
+export function JarvisShell() {
+  const machine = useMemo(() => new AgentStateMachine(), []);
+  const budget = useMemo(() => new BudgetTracker(BUDGET_USD), []);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const noticedProviders = useRef<Set<string>>(new Set());
+
+  const [state, setState] = useState<AgentState>("idle");
+  const [modelAlias, setModelAlias] = useState(jarvisConfig.defaultModel);
+  const [privacyClass] = useState<PrivacyClass>("internal");
+  const [voiceOn, setVoiceOn] = useState(jarvisConfig.voice.autoPlay);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [spent, setSpent] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [fallback, setFallback] = useState({
+    visible: false,
+    requestedAlias: "",
+    effectiveAlias: "",
+    reason: "",
+  });
+  const [pendingRisk, setPendingRisk] = useState<string | null>(null);
+  const [firstUseVoice, setFirstUseVoice] = useState(
+    jarvisConfig.policies.voiceRequiresFirstUseNotice,
+  );
+  const [firstUseProvider, setFirstUseProvider] = useState<string | null>(null);
+  const [webglAvailable, setWebglAvailable] = useState(false);
+  const [forceFallback, setForceFallback] = useState(false);
+
+  const reducedMotion = useReducedMotion();
+  const documentHidden = useDocumentHidden();
+  const { levelRef, micPermission } = useAudioLevel(state, audioRef, {
+    enabled: !reducedMotion,
+  });
+
+  useEffect(() => {
+    setWebglAvailable(detectWebGL());
+  }, []);
+
+  const go = useCallback(
+    (to: AgentState) => {
+      try {
+        machine.transition(to);
+      } catch {
+        machine.force(to);
+      }
+      setState(machine.current);
+    },
+    [machine],
+  );
+
+  const pushMessage = useCallback((msg: ChatMessage) => {
+    setMessages((prev) => [...prev, msg]);
+  }, []);
+
+  const cancelActive = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    setPendingRisk(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+    }
+    go("idle");
+    pushMessage({
+      id: crypto.randomUUID(),
+      role: "system",
+      text: "Cancelado.",
+    });
+  }, [go, pushMessage]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelActive();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
+        e.preventDefault();
+        setHistoryOpen((v) => !v);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        setVoiceOn((v) => !v);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        if (state === "listening") go("idle");
+        else if (state === "idle") go("listening");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cancelActive, go, state]);
+
+  const speakText = async (text: string, signal?: AbortSignal) => {
+    if (firstUseVoice) {
+      setFirstUseVoice(false);
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: "Primeiro uso de voz: áudio sintético mock (MiniMax real não conectado).",
+      });
+    }
+
+    go("thinking");
+    setBusy(true);
+    try {
+      if (signal?.aborted) throw new Error("aborted");
+      const voice = new MockVoiceAdapter();
+      const response = await voice.synthesize({
+        voiceId: jarvisConfig.voice.voiceId,
+        locale: jarvisConfig.voice.locale,
+        audioFormat: jarvisConfig.voice.audioFormat,
+        text,
+        requestId: crypto.randomUUID(),
+      });
+      if (signal?.aborted) throw new Error("aborted");
+      go("speaking");
+      const audio = audioRef.current;
+      if (audio) {
+        audio.src = response.audioPath;
+        await audio.play().catch(() => undefined);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message === "aborted") return;
+      go("failure");
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: "Falha de voz — texto preservado acima.",
+      });
+    } finally {
+      setBusy(false);
+      if (machine.current === "speaking" || machine.current === "thinking") {
+        go("idle");
+      }
+    }
+  };
+
+  const runSlash = async (raw: string): Promise<boolean> => {
+    const parts = raw.trim().split(/\s+/);
+    const cmd = parts[0]?.toLowerCase();
+
+    if (cmd === "/select" && parts[1] === "model") {
+      const alias = parts[2];
+      if (!alias || !listModelAliases().includes(alias)) {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Alias inválido: ${alias ?? "(vazio)"}. Modelo ativo permanece ${modelAlias}.`,
+        });
+        return true;
+      }
+      setModelAlias(alias);
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: `Modelo ativo: ${alias}`,
+      });
+      return true;
+    }
+
+    if (cmd === "/voice") {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === "on") {
+        setVoiceOn(true);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Voz ligada.",
+        });
+        return true;
+      }
+      if (sub === "off") {
+        setVoiceOn(false);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Voz desligada.",
+        });
+        return true;
+      }
+      if (sub === "status") {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Voz ${voiceOn ? "ligada" : "desligada"} · ${jarvisConfig.voice.voiceId}`,
+        });
+        return true;
+      }
+      if (sub === "select" && parts[2]) {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Voz selecionada (mock): ${parts[2]}`,
+        });
+        return true;
+      }
+    }
+
+    if (cmd === "/speak") {
+      const text = raw.replace(/^\/speak\s*/i, "").trim();
+      if (!text) {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Uso: /speak <texto>",
+        });
+        return true;
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
+      await speakText(text, controller.signal);
+      return true;
+    }
+
+    if (cmd === "/fail") {
+      setForceFallback(true);
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: "Próxima mensagem forçará fallback (se houver).",
+      });
+      return true;
+    }
+
+    return false;
+  };
+
+  const handleSubmit = async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+
+    if (requiresConfirmation(text)) {
+      setPendingRisk(text);
+      go("asking");
+      return;
+    }
+
+    if (text.startsWith("/")) {
+      setInput("");
+      const handled = await runSlash(text);
+      if (!handled) {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Comando desconhecido: ${text}`,
+        });
+      }
+      return;
+    }
+
+    const provider = getProviderForAlias(modelAlias);
+    if (!noticedProviders.current.has(provider)) {
+      setFirstUseProvider(provider);
+      go("asking");
+      return;
+    }
+
+    await sendChat(text);
+  };
+
+  const sendChat = async (text: string) => {
+    setInput("");
+    pushMessage({ id: crypto.randomUUID(), role: "user", text });
+    go("thinking");
+    setBusy(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const started = performance.now();
+    try {
+      const { request, route } = await routeTextRequest(modelAlias, text, {
+        privacyClass,
+        maxCostUsd: BUDGET_USD,
+        forceFallback,
+      });
+      setForceFallback(false);
+
+      if (controller.signal.aborted) throw new Error("aborted");
+
+      const { chunks, response } = await collectStream(
+        route.adapter.stream(request),
+      );
+      if (controller.signal.aborted) throw new Error("aborted");
+
+      budget.charge(response.usage.estimatedCostUsd);
+      setSpent(budget.totalSpent);
+
+      setFallback({
+        visible: response.fallbackUsed || route.fallbackUsed,
+        requestedAlias: route.requestedAlias,
+        effectiveAlias: response.model,
+        reason: response.fallbackReason ?? route.fallbackReason ?? "",
+      });
+
+      const full = chunks.join("") || response.text;
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: full,
+        meta: `${response.model} · ${getProviderForAlias(response.model)} · ${response.usage.totalTokens} tokens`,
+      });
+
+      recordTelemetry({
+        requestId: response.requestId,
+        alias: response.model,
+        effectiveProvider: response.provider,
+        latencyMs: performance.now() - started,
+        status: response.fallbackUsed ? "fallback" : "ok",
+        fallbackReason: response.fallbackReason,
+        usage: response.usage,
+      });
+
+      if (voiceOn) {
+        await speakText(full, controller.signal);
+      } else {
+        go("idle");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "erro";
+      if (message === "aborted") return;
+      if (message === "budget_exceeded") {
+        go("asking");
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Orçamento da sessão excedido.",
+        });
+      } else {
+        go("failure");
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Falha: ${message}`,
+        });
+      }
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+      if (
+        machine.current !== "speaking" &&
+        machine.current !== "asking" &&
+        machine.current !== "failure"
+      ) {
+        go("idle");
+      }
+    }
+  };
+
+  const provider = getProviderForAlias(modelAlias);
+
+  return (
+    <div className="relative flex h-dvh flex-col">
+      <InstrumentBar
+        privacyClass={privacyClass}
+        modelAlias={modelAlias}
+        provider={provider}
+        spentUsd={spent}
+        budgetUsd={BUDGET_USD}
+        voiceOn={voiceOn}
+        micPermission={micPermission}
+      />
+
+      <main className="relative flex flex-1 flex-col items-center justify-center px-4">
+        <div className="h-[min(48vh,480px)] w-[min(48vh,480px)]">
+          <PresenceField
+            state={state}
+            levelRef={levelRef}
+            reducedMotion={reducedMotion}
+            paused={documentHidden}
+            webglAvailable={webglAvailable}
+          />
+        </div>
+
+        <div className="mt-5 space-y-2">
+          <StateLabel state={state} />
+          <FallbackStrip
+            visible={fallback.visible}
+            requestedAlias={fallback.requestedAlias}
+            effectiveAlias={fallback.effectiveAlias}
+            reason={fallback.reason}
+          />
+        </div>
+
+        <LastExchange messages={messages} />
+
+        <button
+          type="button"
+          className="mt-4 text-xs text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-1"
+          onClick={() => setHistoryOpen(true)}
+        >
+          histórico ^H ({messages.length})
+        </button>
+      </main>
+
+      <Composer
+        value={input}
+        disabled={busy || Boolean(pendingRisk) || Boolean(firstUseProvider)}
+        onChange={setInput}
+        onSubmit={() => void handleSubmit()}
+      />
+
+      <HistoryPanel
+        open={historyOpen}
+        messages={messages}
+        onClose={() => setHistoryOpen(false)}
+      />
+
+      {firstUseProvider ? (
+        <ConfirmOverlay
+          title="Primeiro uso deste provedor"
+          body={`Você está prestes a enviar dados classificados como "${privacyClass}" para ${firstUseProvider}. Continuar?`}
+          confirmLabel="Continuar"
+          onCancel={() => {
+            setFirstUseProvider(null);
+            go("idle");
+          }}
+          onConfirm={() => {
+            const pending = input.trim();
+            noticedProviders.current.add(firstUseProvider);
+            setFirstUseProvider(null);
+            go("idle");
+            if (pending) queueMicrotask(() => void sendChat(pending));
+          }}
+        />
+      ) : null}
+
+      {pendingRisk ? (
+        <ConfirmOverlay
+          title="Confirmar ação de risco"
+          body={`O comando parece destrutivo ou de rede: "${pendingRisk}". Deseja continuar?`}
+          onCancel={() => {
+            setPendingRisk(null);
+            go("idle");
+          }}
+          onConfirm={() => {
+            const cmd = pendingRisk;
+            setPendingRisk(null);
+            go("idle");
+            queueMicrotask(() => void sendChat(cmd));
+          }}
+        />
+      ) : null}
+
+      <audio ref={audioRef} className="hidden" preload="none" />
+    </div>
+  );
+}

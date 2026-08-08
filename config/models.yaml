@@ -1,0 +1,48 @@
+version: 21
+mode: cloud-only
+default_model: gemini
+
+models:
+  gemini:
+    provider: google
+    adapter: direct-api
+    env_key: GEMINI_API_KEY
+    fallback: [deepseek-flash]
+  deepseek-flash:
+    provider: deepseek
+    adapter: direct-api
+    env_key: DEEPSEEK_API_KEY
+    fallback: [gemini]
+  deepseek-pro:
+    provider: deepseek
+    adapter: direct-api
+    env_key: DEEPSEEK_API_KEY
+    fallback: [gemini]
+  codex:
+    provider: openai
+    adapter: codex-cli
+    auth: chatgpt-account-in-cursor
+    fallback: []
+
+voice:
+  provider: minimax
+  adapter: direct-api
+  env_key: MINIMAX_API_KEY
+  locale: pt-BR
+  voice_id: natural-ptbr-default
+  auto_play: true
+  auto_read: false
+  audio_format: mp3
+  keep_audio: false
+  temp_ttl_seconds: 300
+  max_characters_per_request: 3000
+  fallback: []
+
+policies:
+  log_content: false
+  require_confirmation_for_code_changes: true
+  require_confirmation_for_network_or_destructive_commands: true
+  max_fallback_attempts: 1
+  redact_secrets: true
+  voice_requires_first_use_notice: true
+  delete_temporary_audio_after_playback: true

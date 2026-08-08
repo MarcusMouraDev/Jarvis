@@ -1,10 +1,34 @@
 import type { PrivacyClass } from "./types";
 
-const SECRET_PATTERN =
-  /(api[_-]?key|token|password|secret|bearer\s+\S+)/gi;
+const SECRET_VALUE = String.raw`(?:"[^"]*"|'[^']*'|[^\s,;]+)`;
+const AUTHORIZATION_ASSIGNMENT = new RegExp(
+  String.raw`\b(authorization)\b(["']?\s*[=:]\s*)(?:(?:bearer|basic)\s+)?${SECRET_VALUE}`,
+  "gi",
+);
+const SECRET_ASSIGNMENT = new RegExp(
+  String.raw`\b(api[_-]?key|token|password|secret)\b(["']?\s*[=:]\s*)${SECRET_VALUE}`,
+  "gi",
+);
+const BEARER_VALUE = /"bearer\s+[^"]*"|'bearer\s+[^']*'|\bbearer\s+[^\s,;}\]]+/gi;
+const SECRET_WORD = /\b(?:api[_-]?key|token|password|secret)\b/gi;
 
 export function redactSecrets(text: string): string {
-  return text.replace(SECRET_PATTERN, "[REDACTADO]");
+  return text
+    .replace(
+      AUTHORIZATION_ASSIGNMENT,
+      (_match, key: string, separator: string) =>
+        `${key}${separator}"[REDACTADO]"`,
+    )
+    .replace(BEARER_VALUE, (match) => {
+      const quote = match[0] === '"' || match[0] === "'" ? match[0] : "";
+      return quote ? `${quote}[REDACTADO]${quote}` : "[REDACTADO]";
+    })
+    .replace(
+      SECRET_ASSIGNMENT,
+      (_match, key: string, separator: string) =>
+        `${key}${separator}"[REDACTADO]"`,
+    )
+    .replace(SECRET_WORD, "[REDACTADO]");
 }
 
 export function canSendToProvider(

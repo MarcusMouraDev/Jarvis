@@ -533,23 +533,24 @@ function recordMigrationError(
 }
 
 function importLegacySources(database: Database.Database, dataDir: string): void {
-  const alreadyImported = database
-    .prepare("SELECT 1 FROM legacy_imports WHERE import_key = ?")
-    .get("v23-jsonl");
-  if (alreadyImported) return;
-
   const sources = ["runs.jsonl", "history.jsonl"].flatMap((sourceBasename) => {
     const sourcePath = path.join(dataDir, sourceBasename);
     return existsSync(sourcePath)
       ? [{ sourceBasename, bytes: readFileSync(sourcePath) }]
       : [];
   });
+  if (sources.length === 0) return;
   const importLine = database.transaction(
     (record: Record<string, unknown>, sourceBasename: string, lineNumber: number) =>
       importLegacyRecord(database, record, sourceBasename, lineNumber),
   );
 
   database.transaction(() => {
+    const alreadyImported = database
+      .prepare("SELECT 1 FROM legacy_imports WHERE import_key = ?")
+      .get("v23-jsonl");
+    if (alreadyImported) return;
+
     for (const source of sources) {
       for (const [index, rawLine] of splitLines(source.bytes).entries()) {
         if (rawLine.toString("utf8").trim().length === 0) continue;
@@ -586,7 +587,7 @@ function importLegacySources(database: Database.Database, dataDir: string): void
     database
       .prepare("INSERT INTO legacy_imports(import_key, imported_at) VALUES (?, ?)")
       .run("v23-jsonl", now());
-  })();
+  }).immediate();
 }
 
 export class CoreStore {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import {
   mkdtempSync,
   readFileSync,
@@ -7,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Worker } from "node:worker_threads";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   closeCoreStore,
@@ -15,6 +17,7 @@ import {
 } from "./core-store";
 
 const originalDataDir = process.env.JARVIS_DATA_DIR;
+const require = createRequire(import.meta.url);
 
 describe("core-store", () => {
   let dataDir: string;
@@ -107,6 +110,48 @@ describe("core-store", () => {
       text: "hello",
       z: 2,
     });
+  });
+
+  it("waits to mark an empty import until a legacy source exists", () => {
+    store = openCoreStore();
+    expect(
+      (
+        store
+          .getDatabaseForTests()
+          .prepare("SELECT count(*) AS count FROM legacy_imports")
+          .get() as { count: number }
+      ).count,
+    ).toBe(0);
+    closeCoreStore();
+
+    writeFileSync(
+      path.join(dataDir, "history.jsonl"),
+      `${JSON.stringify({
+        type: "message.append",
+        message: {
+          id: "late-legacy-message",
+          role: "user",
+          text: "created after the first open",
+          at: "2026-01-01T00:00:00.000Z",
+        },
+      })}\n`,
+    );
+
+    store = openCoreStore();
+    expect(store.getMessage("late-legacy-message")?.content).toEqual({
+      text: "created after the first open",
+    });
+    closeCoreStore();
+
+    store = openCoreStore();
+    expect(
+      (
+        store
+          .getDatabaseForTests()
+          .prepare("SELECT count(*) AS count FROM messages")
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
   });
 
   it("requires sessions for new runs and stores redacted canonical JSON", () => {
@@ -313,7 +358,17 @@ describe("core-store", () => {
       status: "ok",
     });
     expect(store.getRun("legacy-gemini")?.requestedModel).toBe("gemini");
-    expect(store.replayEvents("legacy-cursor", 0)).toHaveLength(1);
+    const importedEvents = store.replayEvents("legacy-cursor", 0);
+    expect(importedEvents).toHaveLength(1);
+    expect(JSON.stringify(importedEvents[0].payload)).not.toContain("do-not-store");
+    expect(
+      (
+        store
+          .getDatabaseForTests()
+          .prepare("SELECT payload_json AS payload FROM events WHERE run_id = ?")
+          .get("legacy-cursor") as { payload: string }
+      ).payload,
+    ).not.toContain("do-not-store");
     expect(store.getMessage("message-legacy")?.content).toEqual({
       meta: "source",
       text: "legacy hello",
@@ -384,6 +439,84 @@ describe("core-store", () => {
       migrationErrors: 2,
       legacyImports: 1,
     });
+  });
+
+  it("checks the import marker after acquiring the immediate transaction", async () => {
+    store = openCoreStore();
+    store
+      .getDatabaseForTests()
+      .prepare("DELETE FROM legacy_imports")
+      .run();
+    closeCoreStore();
+    writeFileSync(
+      path.join(dataDir, "history.jsonl"),
+      `${JSON.stringify({
+        type: "message.append",
+        message: {
+          id: "must-not-be-imported-twice",
+          role: "user",
+          text: "already owned by the first opener",
+          at: "2026-01-01T00:00:00.000Z",
+        },
+      })}\n`,
+    );
+
+    const worker = new Worker(
+      `
+        const { parentPort, workerData } = require("node:worker_threads");
+        const Database = require(workerData.sqliteModule);
+        const database = new Database(workerData.databasePath);
+        database.pragma("busy_timeout = 5000");
+        database.exec("BEGIN IMMEDIATE");
+        parentPort.postMessage("locked");
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+        database.prepare(
+          "INSERT INTO legacy_imports(import_key, imported_at) VALUES (?, ?)",
+        ).run("v23-jsonl", "2026-01-01T00:00:00.000Z");
+        database.exec("COMMIT");
+        database.close();
+      `,
+      {
+        eval: true,
+        workerData: {
+          databasePath: path.join(dataDir, "core.db"),
+          sqliteModule: require.resolve("better-sqlite3"),
+        },
+      },
+    );
+    const workerExit = new Promise<void>((resolve, reject) => {
+      worker.once("error", reject);
+      worker.once("exit", (code) =>
+        code === 0 ? resolve() : reject(new Error(`worker exited ${code}`)),
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      worker.once("error", reject);
+      worker.once("message", (message) =>
+        message === "locked"
+          ? resolve()
+          : reject(new Error(`unexpected worker message: ${message}`)),
+      );
+    });
+
+    let openError: unknown;
+    try {
+      store = openCoreStore();
+    } catch (error) {
+      openError = error;
+    }
+    await workerExit;
+
+    expect(openError).toBeUndefined();
+    expect(store.getMessage("must-not-be-imported-twice")).toBeNull();
+    expect(
+      (
+        store
+          .getDatabaseForTests()
+          .prepare("SELECT count(*) AS count FROM legacy_imports")
+          .get() as { count: number }
+      ).count,
+    ).toBe(1);
   });
 
   it("leaves memory and scheduler databases untouched", () => {

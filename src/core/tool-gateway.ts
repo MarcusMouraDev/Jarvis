@@ -312,7 +312,7 @@ function assertTerminalRun(
   root: string,
   input: { program: string; args: string[]; script?: string },
   fs: SafeToolFileSystem,
-): { networkCapable: boolean; scriptDigest?: string } {
+): { networkCapable: boolean; scriptCommand?: string; scriptDigest?: string } {
   if (input.program.includes("/") || input.program.includes("\\")) fail("unsafe_terminal_run");
   try {
     input.args.forEach(assertNoUnsafeArg);
@@ -330,7 +330,11 @@ function assertTerminalRun(
     ) {
       fail("unsafe_terminal_run");
     }
-    return { networkCapable: true, scriptDigest: textDigest(scripts[input.script]) };
+    return {
+      networkCapable: true,
+      scriptCommand: scripts[input.script],
+      scriptDigest: textDigest(scripts[input.script]),
+    };
   }
   if (input.program === "git") {
     if (!input.args.length || !["add", "commit"].includes(input.args[0])) {
@@ -736,19 +740,27 @@ export class SafeToolGateway {
 
   private prepareTerminalRun(root: string, input: JsonValue, manifest: SafeToolManifest): PreparedTool {
     const parsed = input as { program: string; args: string[]; script?: string };
-    const { networkCapable, scriptDigest } = assertTerminalRun(root, parsed, this.fs);
-    const effect = toJsonValue({
+    const { networkCapable, scriptCommand, scriptDigest } = assertTerminalRun(
+      root,
+      parsed,
+      this.fs,
+    );
+    const effectDetails = {
       kind: "terminal_run",
       program: parsed.program,
       args: parsed.args,
       script: parsed.script,
       scriptDigest,
       networkCapable,
-    });
+    };
+    const effect = toJsonValue(effectDetails);
     return {
       input,
       effect,
-      preview: effect,
+      preview: toJsonValue({
+        ...effectDetails,
+        ...(scriptCommand ? { scriptCommand: redactSecrets(scriptCommand) } : {}),
+      }),
       run: () => this.execute({
         program: parsed.program,
         args: parsed.args,

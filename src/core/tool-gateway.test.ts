@@ -194,7 +194,12 @@ describe("safe tool gateway", () => {
     expect(result).toMatchObject({
       status: "approval_required",
       expiresAt: "2026-08-08T10:11:00.000Z",
-      preview: { kind: "terminal_run", program: "npm", script: "test" },
+      preview: {
+        kind: "terminal_run",
+        program: "npm",
+        script: "test",
+        scriptCommand: "vitest run",
+      },
     });
     expect(execute).not.toHaveBeenCalled();
     expect(store.getSafeApproval(result.approvalId)).toMatchObject({

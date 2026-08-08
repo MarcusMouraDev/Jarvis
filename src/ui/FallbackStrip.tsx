@@ -15,11 +15,13 @@ export function FallbackStrip({
 
   return (
     <div
-      className="border border-fallback/40 bg-surface-1 px-3 py-2 text-sm text-fallback"
+      className="w-full max-w-[65ch] rounded-md border border-fallback/35 bg-surface-1/90 px-3 py-2 text-center text-xs text-fallback sm:text-sm"
       role="status"
     >
-      Fallback ativo: pedido <span className="font-mono">{requestedAlias}</span> →
-      efetivo <span className="font-mono">{effectiveAlias}</span>
+      Fallback ativo: pedido{" "}
+      <span className="font-mono whitespace-nowrap">{requestedAlias}</span> →
+      efetivo{" "}
+      <span className="font-mono whitespace-nowrap">{effectiveAlias}</span>
       {reason ? ` (${reason})` : null}
     </div>
   );

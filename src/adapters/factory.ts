@@ -2,8 +2,25 @@ import type { TextAdapter } from "./base";
 import { CursorTextAdapter } from "./cursor";
 import { GeminiTextAdapter } from "./gemini";
 import { MockTextAdapter } from "./mock-text";
+import {
+  OpenAICompatibleTextAdapter,
+  isOpenAICompatibleConfigured,
+} from "./openai-compatible";
 import type { MockFailure } from "./base";
+import { getModelConfig } from "@/core/config";
 import { hasEnv } from "@/lib/env";
+
+export function isModelAliasAvailable(alias: string): boolean {
+  const config = getModelConfig(alias);
+  if (!config) return false;
+
+  if (config.adapter === "openai-compatible") {
+    return isOpenAICompatibleConfigured();
+  }
+  if (alias === "gemini") return hasEnv("GEMINI_API_KEY");
+  if (alias === "codex") return hasEnv("CURSOR_API_KEY");
+  return true;
+}
 
 export function createTextAdapter(
   alias: string,
@@ -21,6 +38,26 @@ export function createTextAdapter(
         options.failure ?? "none",
         options.fallbackUsed,
         options.fallbackReason,
+      ),
+      mode: "mock",
+    };
+  }
+
+  const config = getModelConfig(alias);
+
+  if (config?.adapter === "openai-compatible") {
+    if (isOpenAICompatibleConfigured()) {
+      return {
+        adapter: new OpenAICompatibleTextAdapter(alias),
+        mode: "live",
+      };
+    }
+    return {
+      adapter: new MockTextAdapter(
+        alias,
+        "unavailable",
+        options?.fallbackUsed,
+        options?.fallbackReason,
       ),
       mode: "mock",
     };

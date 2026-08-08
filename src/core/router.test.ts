@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectStream, codexHasNoFallback, routeTextRequest } from "./router";
+import { collectStream, codexHasNoFallback, evaluateCloudFallbackConsent, routeTextRequest } from "./router";
 
 describe("router", () => {
   it("codex não tem fallback", () => {
@@ -21,7 +21,7 @@ describe("router", () => {
       failure: "rate_limit",
     });
     expect(route.fallbackUsed).toBe(true);
-    const { response } = await collectStream(route.adapter.stream(request));
+    const { response } = await collectStream(route.adapter!.stream(request));
     expect(response.fallbackUsed).toBe(true);
     expect(response.model).toBe("deepseek-flash");
   });
@@ -32,5 +32,22 @@ describe("router", () => {
     });
     expect(route.fallbackUsed).toBe(false);
     expect(route.effectiveAlias).toBe("codex");
+  });
+
+  it("exige consentimento para fallback confidencial local→nuvem", async () => {
+    const consent = evaluateCloudFallbackConsent({
+      requestedAlias: "local-openai",
+      effectiveAlias: "gemini",
+      privacyClass: "confidential",
+      fallbackUsed: true,
+    });
+    expect(consent?.required).toBe(true);
+
+    const { route } = await routeTextRequest("local-openai", "segredo", {
+      privacyClass: "confidential",
+      forceFallback: true,
+    });
+    expect(route.cloudFallbackConsentRequired).toBe(true);
+    expect(route.adapter).toBeUndefined();
   });
 });

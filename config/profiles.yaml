@@ -1,0 +1,25 @@
+profiles:
+  conversa:
+    allowed_models: [gemini, deepseek-flash, codex]
+    allowed_tools: [shell.run]
+    budget_usd: 2
+    memory_policy: manual
+    timeout_ms: 120000
+  pesquisa:
+    allowed_models: [gemini, deepseek-flash, deepseek-pro]
+    allowed_tools: [shell.run, mcp_brasil.query, browser.run]
+    budget_usd: 5
+    memory_policy: consent
+    timeout_ms: 180000
+  briefing:
+    allowed_models: [gemini, deepseek-pro]
+    allowed_tools: []
+    budget_usd: 1.5
+    memory_policy: off
+    timeout_ms: 90000
+  monitor:
+    allowed_models: [gemini, deepseek-flash]
+    allowed_tools: [shell.run]
+    budget_usd: 3
+    memory_policy: manual
+    timeout_ms: 60000

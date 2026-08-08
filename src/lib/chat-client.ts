@@ -23,6 +23,26 @@ export interface ChatStreamHandlers {
     };
   }) => void;
   onError?: (error: string) => void;
+  onConsentRequired?: (consent: {
+    kind: "cloud_fallback";
+    requestedAlias: string;
+    effectiveAlias: string;
+    fallbackReason?: string;
+    privacyClass?: string;
+  }) => void;
+}
+
+export interface ChatContextBlock {
+  relPath: string;
+  absPath?: string;
+  hash: string;
+  byteSize: number;
+  lineCount: number;
+  language: string;
+  exports: string[];
+  imports: string[];
+  symbols: string[];
+  excerpt: string;
 }
 
 export async function streamChat(
@@ -33,6 +53,10 @@ export async function streamChat(
     skills?: string[];
     autoSelectSkills?: boolean;
     forceFallback?: boolean;
+    contextBlocks?: ChatContextBlock[];
+    profile?: string;
+    memoryIds?: string[];
+    confirmedCloudFallback?: boolean;
   },
   handlers: ChatStreamHandlers,
   signal?: AbortSignal,
@@ -77,6 +101,8 @@ export async function streamChat(
           fallbackUsed?: boolean;
           fallbackReason?: string;
           mode?: "live" | "mock";
+          kind?: "cloud_fallback";
+          privacyClass?: string;
           response?: ChatStreamHandlers extends never ? never : {
             text: string;
             model: string;
@@ -102,6 +128,15 @@ export async function streamChat(
             fallbackUsed: Boolean(evt.fallbackUsed),
             fallbackReason: evt.fallbackReason,
             mode: evt.mode ?? "mock",
+          });
+        }
+        if (evt.type === "consent_required" && evt.kind === "cloud_fallback") {
+          handlers.onConsentRequired?.({
+            kind: "cloud_fallback",
+            requestedAlias: evt.requestedAlias ?? "",
+            effectiveAlias: evt.effectiveAlias ?? "",
+            fallbackReason: evt.fallbackReason,
+            privacyClass: evt.privacyClass,
           });
         }
         if (evt.type === "done" && evt.response) handlers.onDone?.(evt.response);

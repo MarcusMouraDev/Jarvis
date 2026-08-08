@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MockVoiceAdapter } from "@/adapters/mock-voice";
+import type { ComposerChip } from "@/composer/mention-types";
+import { serializeUserPrompt } from "@/composer/serialize-payload";
 import {
   getProviderForAlias,
   jarvisConfig,
@@ -10,18 +12,34 @@ import {
 import { BudgetTracker, requiresConfirmation } from "@/core/policy";
 import type { AgentState, PrivacyClass } from "@/core/types";
 import { streamChat } from "@/lib/chat-client";
+import {
+  decideShellApproval,
+  streamShell,
+} from "@/lib/shell-client";
+import { PRESENCE_BY_STATE } from "@/state/presence-config";
 import { AgentStateMachine } from "@/state/agent-state";
 import { useAudioLevel } from "@/audio/use-audio-level";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useWebGLAvailable } from "@/hooks/use-webgl";
 import { PresenceField } from "@/presence/PresenceField";
+import { CommandPalette, type PaletteRun, type PaletteSkill } from "./CommandPalette";
 import { Composer } from "./Composer";
 import { ConfirmOverlay } from "./ConfirmOverlay";
 import { FallbackStrip } from "./FallbackStrip";
-import { HistoryPanel, type ChatMessage } from "./HistoryPanel";
+import {
+  HistoryPanel,
+  type ChatMessage,
+  type RunSummary,
+} from "./HistoryPanel";
+import { MemoryPanel } from "./MemoryPanel";
 import { InstrumentBar } from "./InstrumentBar";
 import { LastExchange } from "./LastExchange";
 import { StateLabel } from "./StateLabel";
+import {
+  TerminalPanel,
+  type PendingShellApproval,
+  type TerminalLine,
+} from "./TerminalPanel";
 
 const BUDGET_USD = 2;
 
@@ -30,6 +48,7 @@ export function JarvisShell() {
   const budget = useMemo(() => new BudgetTracker(BUDGET_USD), []);
   const audioRef = useRef<HTMLAudioElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const shellAbortRef = useRef<AbortController | null>(null);
   const noticedProviders = useRef<Set<string>>(new Set());
 
   const [state, setState] = useState<AgentState>("idle");
@@ -40,7 +59,19 @@ export function JarvisShell() {
   const [busy, setBusy] = useState(false);
   const [spent, setSpent] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [historyTab, setHistoryTab] = useState<"messages" | "runs">("messages");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteSkills, setPaletteSkills] = useState<PaletteSkill[]>([]);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
+  const [terminalExit, setTerminalExit] = useState<number | null>(null);
+  const [shellRunning, setShellRunning] = useState(false);
+  const [pendingShell, setPendingShell] = useState<PendingShellApproval | null>(
+    null,
+  );
   const [fallback, setFallback] = useState({
     visible: false,
     requestedAlias: "",
@@ -52,8 +83,18 @@ export function JarvisShell() {
     jarvisConfig.policies.voiceRequiresFirstUseNotice,
   );
   const [firstUseProvider, setFirstUseProvider] = useState<string | null>(null);
+  const [pendingCloudFallback, setPendingCloudFallback] = useState<{
+    requestedAlias: string;
+    effectiveAlias: string;
+    text: string;
+    payload?: ReturnType<typeof serializeUserPrompt>;
+    fallbackReason?: string;
+  } | null>(null);
   const [forceFallback, setForceFallback] = useState(false);
   const [activeSkills, setActiveSkills] = useState<string[]>([]);
+  const [composerChips, setComposerChips] = useState<ComposerChip[]>([]);
+  const [profileId, setProfileId] = useState("conversa");
+  const modelAliases = useMemo(() => listModelAliases(), []);
 
   const reducedMotion = useReducedMotion();
   const documentHidden = useDocumentHidden();
@@ -61,6 +102,12 @@ export function JarvisShell() {
   const { levelRef, micPermission } = useAudioLevel(state, audioRef, {
     enabled: !reducedMotion,
   });
+
+  const glow =
+    state === "failure"
+      ? "#7a8088"
+      : PRESENCE_BY_STATE[state].colorA;
+  const panelOpen = historyOpen || memoryOpen || terminalOpen || paletteOpen;
 
   const go = useCallback(
     (to: AgentState) => {
@@ -76,13 +123,43 @@ export function JarvisShell() {
 
   const pushMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg]);
+    void fetch("/api/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: msg.id,
+        role: msg.role,
+        text: msg.text,
+        meta: msg.meta,
+      }),
+    }).catch(() => {
+      // Persistence is best-effort.
+    });
+  }, []);
+
+  const refreshRuns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/runs?limit=40");
+      if (!res.ok) return;
+      const data = (await res.json()) as { runs: RunSummary[] };
+      setRuns(data.runs ?? []);
+    } catch {
+      // ignore
+    }
   }, []);
 
   const cancelActive = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    shellAbortRef.current?.abort();
+    shellAbortRef.current = null;
     setBusy(false);
+    setShellRunning(false);
     setPendingRisk(null);
+    setPendingShell(null);
+    setFirstUseProvider(null);
+    setPendingCloudFallback(null);
+    setPaletteOpen(false);
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
@@ -95,11 +172,96 @@ export function JarvisShell() {
     });
   }, [go, pushMessage]);
 
+  const appendTerminal = useCallback(
+    (kind: TerminalLine["kind"], text: string) => {
+      setTerminalLines((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), kind, text },
+      ]);
+    },
+    [],
+  );
+
+  const runShell = useCallback(
+    async (command: string, approvalId?: string) => {
+      setTerminalOpen(true);
+      setTerminalExit(null);
+      setShellRunning(true);
+      setPendingShell(null);
+      if (!approvalId) {
+        appendTerminal("cmd", `$ ${command}`);
+      }
+      go("thinking");
+      const controller = new AbortController();
+      shellAbortRef.current = controller;
+
+      try {
+        await streamShell(
+          { command, approvalId },
+          {
+            onNeedsApproval: (payload) => {
+              setPendingShell({
+                approvalId: payload.approvalId,
+                runId: payload.runId,
+                command,
+                classified: payload.classified,
+                cwd: payload.cwd,
+                timeoutMs: payload.timeoutMs,
+              });
+              setShellRunning(false);
+              go("asking");
+            },
+            onClassified: (c) => {
+              appendTerminal(
+                "meta",
+                `# ${c.tier}${c.reasons.length ? ` · ${c.reasons.join(", ")}` : ""}`,
+              );
+            },
+            onStdout: (text) => appendTerminal("stdout", text),
+            onStderr: (text) => appendTerminal("stderr", text),
+            onExit: ({ exitCode }) => {
+              setTerminalExit(exitCode);
+              appendTerminal(
+                "meta",
+                `# exit ${exitCode ?? "?"}`,
+              );
+              void refreshRuns();
+            },
+            onError: (error) => {
+              appendTerminal("stderr", error);
+              go("failure");
+            },
+          },
+          controller.signal,
+        );
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        const message = err instanceof Error ? err.message : "erro";
+        appendTerminal("stderr", message);
+        go("failure");
+      } finally {
+        setShellRunning(false);
+        shellAbortRef.current = null;
+        if (machine.current === "thinking") go("idle");
+      }
+    },
+    [appendTerminal, go, machine, refreshRuns],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        if (paletteOpen) {
+          setPaletteOpen(false);
+          return;
+        }
         cancelActive();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
@@ -120,7 +282,44 @@ export function JarvisShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cancelActive, go, state]);
+  }, [cancelActive, go, paletteOpen, state]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/skills");
+        if (!res.ok) return;
+        const data = (await res.json()) as { skills: PaletteSkill[] };
+        setPaletteSkills(data.skills ?? []);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    void (async () => {
+      try {
+        const [skillsRes, runsRes] = await Promise.all([
+          fetch("/api/skills"),
+          fetch("/api/runs?limit=12"),
+        ]);
+        if (skillsRes.ok) {
+          const data = (await skillsRes.json()) as {
+            skills: PaletteSkill[];
+          };
+          setPaletteSkills(data.skills ?? []);
+        }
+        if (runsRes.ok) {
+          const data = (await runsRes.json()) as { runs: PaletteRun[] };
+          setRuns(data.runs ?? []);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [paletteOpen]);
 
   const speakText = async (text: string, signal?: AbortSignal) => {
     if (firstUseVoice) {
@@ -170,6 +369,20 @@ export function JarvisShell() {
   const runSlash = async (raw: string): Promise<boolean> => {
     const parts = raw.trim().split(/\s+/);
     const cmd = parts[0]?.toLowerCase();
+
+    if (cmd === "/run") {
+      const command = raw.replace(/^\/run\s*/i, "").trim();
+      if (!command) {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Uso: /run <comando>  ou  !<comando>",
+        });
+        return true;
+      }
+      await runShell(command);
+      return true;
+    }
 
     if (cmd === "/select" && parts[1] === "model") {
       const alias = parts[2];
@@ -241,6 +454,52 @@ export function JarvisShell() {
       const controller = new AbortController();
       abortRef.current = controller;
       await speakText(text, controller.signal);
+      return true;
+    }
+
+    if (cmd === "/profile") {
+      const next = parts[1]?.toLowerCase();
+      if (!next) {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Perfil ativo: ${profileId}. Uso: /profile <conversa|pesquisa|briefing|monitor>`,
+        });
+        return true;
+      }
+      try {
+        const res = await fetch(`/api/profiles?id=${encodeURIComponent(next)}`);
+        if (!res.ok) {
+          pushMessage({
+            id: crypto.randomUUID(),
+            role: "system",
+            text: `Perfil desconhecido: ${next}`,
+          });
+          return true;
+        }
+        setProfileId(next);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Perfil ativo: ${next}`,
+        });
+      } catch {
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Não foi possível trocar o perfil.",
+        });
+      }
+      return true;
+    }
+
+    if (cmd === "/memory") {
+      setMemoryOpen(true);
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: "Painel de memória aberto.",
+      });
       return true;
     }
 
@@ -325,9 +584,16 @@ export function JarvisShell() {
 
   const handleSubmit = async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if ((!text && composerChips.length === 0) || busy) return;
 
-    if (requiresConfirmation(text)) {
+    if (text.startsWith("!")) {
+      setInput("");
+      setComposerChips([]);
+      await runShell(text.slice(1).trim());
+      return;
+    }
+
+    if (requiresConfirmation(text) && !text.startsWith("/")) {
       setPendingRisk(text);
       go("asking");
       return;
@@ -335,30 +601,74 @@ export function JarvisShell() {
 
     if (text.startsWith("/")) {
       setInput("");
-      const handled = await runSlash(text);
-      if (!handled) {
+      setComposerChips([]);
+      setBusy(true);
+      try {
+        const handled = await runSlash(text);
+        if (!handled) {
+          pushMessage({
+            id: crypto.randomUUID(),
+            role: "system",
+            text: `Comando desconhecido: ${text}`,
+          });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "erro";
         pushMessage({
           id: crypto.randomUUID(),
           role: "system",
-          text: `Comando desconhecido: ${text}`,
+          text: `Falha no comando: ${message}`,
         });
+        go("failure");
+      } finally {
+        setBusy(false);
+        if (machine.current !== "speaking" && machine.current !== "failure" && machine.current !== "asking") {
+          go("idle");
+        }
       }
       return;
     }
 
-    const provider = getProviderForAlias(modelAlias);
+    const payload = serializeUserPrompt(
+      { text: input, chips: composerChips, cursor: input.length },
+      modelAlias,
+    );
+    const provider = getProviderForAlias(payload.alias);
     if (!noticedProviders.current.has(provider)) {
       setFirstUseProvider(provider);
       go("asking");
       return;
     }
 
-    await sendChat(text);
+    await sendChat(payload.userText || text, payload);
   };
 
-  const sendChat = async (text: string) => {
+  const sendChat = async (
+    text: string,
+    payload?: ReturnType<typeof serializeUserPrompt>,
+    confirmedCloudFallback = false,
+  ) => {
+    const effective =
+      payload ??
+      serializeUserPrompt(
+        { text, chips: composerChips, cursor: text.length },
+        modelAlias,
+      );
     setInput("");
-    pushMessage({ id: crypto.randomUUID(), role: "user", text });
+    setComposerChips([]);
+    const chipMeta = [
+      effective.alias !== modelAlias ? `@${effective.alias}` : null,
+      ...effective.skills.map((s) => `/${s}`),
+      ...effective.contextBlocks.map((b) => `#${b.relPath}`),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    pushMessage({
+      id: crypto.randomUUID(),
+      role: "user",
+      text,
+      meta: chipMeta || undefined,
+    });
     go("thinking");
     setBusy(true);
     const controller = new AbortController();
@@ -367,16 +677,28 @@ export function JarvisShell() {
     const assistantId = crypto.randomUUID();
     let full = "";
     let sawDone = false;
+    let consentPending = false;
+    const skills =
+      effective.skills.length > 0
+        ? effective.skills
+        : activeSkills.length
+          ? activeSkills
+          : undefined;
 
     try {
       await streamChat(
         {
-          alias: modelAlias,
+          alias: effective.alias,
           prompt: text,
           privacyClass,
-          skills: activeSkills.length ? activeSkills : undefined,
-          autoSelectSkills: activeSkills.length === 0,
+          skills,
+          autoSelectSkills: effective.autoSelectSkills && !activeSkills.length,
           forceFallback,
+          contextBlocks: effective.contextBlocks.length
+            ? effective.contextBlocks
+            : undefined,
+          profile: profileId,
+          confirmedCloudFallback,
         },
         {
           onSkills: (skills) => {
@@ -394,6 +716,17 @@ export function JarvisShell() {
               effectiveAlias: route.effectiveAlias,
               reason: route.fallbackReason ?? "",
             });
+          },
+          onConsentRequired: (consent) => {
+            consentPending = true;
+            setPendingCloudFallback({
+              requestedAlias: consent.requestedAlias,
+              effectiveAlias: consent.effectiveAlias,
+              text,
+              payload: effective,
+              fallbackReason: consent.fallbackReason,
+            });
+            go("asking");
           },
           onChunk: (chunk) => {
             full += chunk;
@@ -455,6 +788,7 @@ export function JarvisShell() {
                 m.id === assistantId ? { ...m, text: full, meta } : m,
               );
             });
+            void refreshRuns();
           },
           onError: (error) => {
             throw new Error(error);
@@ -462,6 +796,8 @@ export function JarvisShell() {
         },
         controller.signal,
       );
+
+      if (consentPending) return;
 
       if (!sawDone && !controller.signal.aborted) {
         throw new Error("stream_incomplete");
@@ -494,12 +830,71 @@ export function JarvisShell() {
     }
   };
 
+  const handlePaletteAction = async (
+    action: string,
+    meta?: { skill?: string; shift?: boolean },
+  ) => {
+    setPaletteOpen(false);
+    if (action === "skill-use" && meta?.skill) {
+      if (meta.shift) await runSlash(`/skill show ${meta.skill}`);
+      else await runSlash(`/skill use ${meta.skill}`);
+      return;
+    }
+    if (action === "history") {
+      setHistoryTab("messages");
+      setHistoryOpen(true);
+      return;
+    }
+    if (action === "runs") {
+      setHistoryTab("runs");
+      setHistoryOpen(true);
+      void refreshRuns();
+      return;
+    }
+    if (action === "terminal") {
+      setTerminalOpen(true);
+      return;
+    }
+    if (action === "voice-toggle") {
+      setVoiceOn((v) => !v);
+      return;
+    }
+    if (action === "listen-toggle") {
+      if (state === "listening") go("idle");
+      else if (state === "idle") go("listening");
+      return;
+    }
+    if (action === "model-gemini") {
+      await runSlash("/select model gemini");
+      return;
+    }
+    if (action === "model-codex") {
+      await runSlash("/select model codex");
+      return;
+    }
+    if (action === "skills-list") {
+      await runSlash("/skills list");
+      return;
+    }
+    if (action === "show-run" && meta?.skill) {
+      setHistoryTab("runs");
+      setHistoryOpen(true);
+      void refreshRuns();
+    }
+  };
+
   const provider = getProviderForAlias(modelAlias);
 
   return (
-    <div className="relative flex h-dvh flex-col">
+    <div
+      className="relative flex h-dvh flex-col overflow-x-clip"
+      style={{ "--state-glow": glow } as React.CSSProperties}
+    >
+      <div className="shell-vignette" aria-hidden />
+
       <InstrumentBar
         privacyClass={privacyClass}
+        profile={profileId}
         modelAlias={modelAlias}
         provider={provider}
         spentUsd={spent}
@@ -508,50 +903,156 @@ export function JarvisShell() {
         micPermission={micPermission}
       />
 
-      <main className="relative flex flex-1 flex-col items-center justify-center px-4">
-        <div className="h-[min(48vh,480px)] w-[min(48vh,480px)]">
-          <PresenceField
-            state={state}
-            levelRef={levelRef}
-            reducedMotion={reducedMotion}
-            paused={documentHidden}
-            webglAvailable={webglAvailable}
-          />
+      <main className="relative z-20 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 pt-3 sm:px-4 sm:pt-4">
+        <div className="flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
+          <div
+            className={`presence-stage shrink-0 ${panelOpen ? "presence-stage--compact" : ""}`}
+          >
+            <div className="presence-halo" aria-hidden />
+            <PresenceField
+              state={state}
+              levelRef={levelRef}
+              reducedMotion={reducedMotion}
+              paused={documentHidden}
+              webglAvailable={webglAvailable}
+            />
+          </div>
+
+          <div className="mt-3 flex w-full flex-col items-center gap-2 sm:mt-4">
+            <StateLabel state={state} />
+            <FallbackStrip
+              visible={fallback.visible}
+              requestedAlias={fallback.requestedAlias}
+              effectiveAlias={fallback.effectiveAlias}
+              reason={fallback.reason}
+            />
+          </div>
+
+          <LastExchange messages={messages} />
+
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              className="btn-press text-xs whitespace-nowrap text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
+              onClick={() => setHistoryOpen(true)}
+            >
+              histórico ^H ({messages.length})
+            </button>
+            <button
+              type="button"
+              className="btn-press text-xs whitespace-nowrap text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
+              onClick={() => setMemoryOpen(true)}
+            >
+              memória
+            </button>
+            <button
+              type="button"
+              className="btn-press text-xs whitespace-nowrap text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
+              onClick={() => setTerminalOpen(true)}
+            >
+              terminal
+            </button>
+            <button
+              type="button"
+              className="btn-press text-xs whitespace-nowrap text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
+              onClick={() => setPaletteOpen(true)}
+            >
+              ⌘K
+            </button>
+          </div>
         </div>
-
-        <div className="mt-5 space-y-2">
-          <StateLabel state={state} />
-          <FallbackStrip
-            visible={fallback.visible}
-            requestedAlias={fallback.requestedAlias}
-            effectiveAlias={fallback.effectiveAlias}
-            reason={fallback.reason}
-          />
-        </div>
-
-        <LastExchange messages={messages} />
-
-        <button
-          type="button"
-          className="mt-4 text-xs text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-1"
-          onClick={() => setHistoryOpen(true)}
-        >
-          histórico ^H ({messages.length})
-        </button>
       </main>
 
       <Composer
         value={input}
-        disabled={busy || Boolean(pendingRisk) || Boolean(firstUseProvider)}
+        chips={composerChips}
+        disabled={busy || Boolean(pendingRisk) || Boolean(firstUseProvider) || Boolean(pendingCloudFallback)}
         onChange={setInput}
+        onChipsChange={setComposerChips}
         onSubmit={() => void handleSubmit()}
+        skillCatalog={paletteSkills}
+        modelAliases={modelAliases}
       />
 
       <HistoryPanel
         open={historyOpen}
         messages={messages}
+        runs={runs}
+        tab={historyTab}
+        onTabChange={(tab) => {
+          setHistoryTab(tab);
+          if (tab === "runs") void refreshRuns();
+        }}
         onClose={() => setHistoryOpen(false)}
       />
+
+      <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+
+      <TerminalPanel
+        open={terminalOpen}
+        lines={terminalLines}
+        exitCode={terminalExit}
+        running={shellRunning}
+        pending={pendingShell}
+        onClose={() => setTerminalOpen(false)}
+        onCancel={() => {
+          shellAbortRef.current?.abort();
+          setShellRunning(false);
+          go("idle");
+        }}
+        onApprove={() => {
+          if (!pendingShell) return;
+          const { approvalId, command } = pendingShell;
+          setPendingShell(null);
+          void (async () => {
+            await decideShellApproval(approvalId, "approved");
+            await runShell(command, approvalId);
+          })();
+        }}
+        onDeny={() => {
+          if (!pendingShell) return;
+          const id = pendingShell.approvalId;
+          setPendingShell(null);
+          void decideShellApproval(id, "denied");
+          appendTerminal("meta", "# recusado");
+          go("idle");
+          void refreshRuns();
+        }}
+      />
+
+      {paletteOpen ? (
+        <CommandPalette
+          skills={paletteSkills}
+          runs={runs}
+          onClose={() => setPaletteOpen(false)}
+          onAction={(action, meta) => void handlePaletteAction(action, meta)}
+        />
+      ) : null}
+
+      {pendingCloudFallback ? (
+        <ConfirmOverlay
+          title="Fallback confidencial para nuvem"
+          body={`Dados classificados como "${privacyClass}" não puderam ser atendidos localmente (${pendingCloudFallback.requestedAlias}). O fallback enviaria para ${pendingCloudFallback.effectiveAlias} na nuvem. Continuar?`}
+          confirmLabel="Enviar para nuvem"
+          onCancel={() => {
+            setPendingCloudFallback(null);
+            go("idle");
+            pushMessage({
+              id: crypto.randomUUID(),
+              role: "system",
+              text: "Fallback para nuvem cancelado — mensagem não enviada.",
+            });
+          }}
+          onConfirm={() => {
+            const pending = pendingCloudFallback;
+            setPendingCloudFallback(null);
+            go("idle");
+            queueMicrotask(() =>
+              void sendChat(pending.text, pending.payload, true),
+            );
+          }}
+        />
+      ) : null}
 
       {firstUseProvider ? (
         <ConfirmOverlay

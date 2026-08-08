@@ -3,13 +3,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 describe("reduced-motion contract", () => {
-  it("PresenceField uses CSS fallback when reducedMotion is true", () => {
+  it("PresenceField keeps WebGL path and freezes motion via reducedMotion prop", () => {
     const src = readFileSync(
       resolve(__dirname, "../presence/PresenceField.tsx"),
       "utf8",
     );
-    expect(src).toContain("if (reducedMotion)");
+    expect(src).toContain("reducedMotion={reducedMotion}");
+    expect(src).toContain("if (!webglAvailable)");
     expect(src).toContain("PresenceFallback");
+    expect(src).not.toMatch(/if \(reducedMotion\)\s*\{[\s\S]*PresenceFallback/);
   });
 
   it("useReducedMotion server snapshot defaults to reduced", () => {

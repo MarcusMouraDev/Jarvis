@@ -1,4 +1,4 @@
-version: 21
+version: 23
 mode: cloud-only
 default_model: gemini
 
@@ -23,6 +23,11 @@ models:
     adapter: codex-cli
     auth: chatgpt-account-in-cursor
     fallback: []
+  local-openai:
+    provider: local
+    adapter: openai-compatible
+    env_key: LOCAL_OPENAI_BASE_URL
+    fallback: [gemini]
 
 voice:
   provider: minimax

@@ -1,4 +1,4 @@
-# Jarvis V21 — presença viva
+# Jarvis V22 — presença viva
 
 ## Sistema de estado cromático
 
@@ -19,20 +19,47 @@
 
 Definidos em `src/app/globals.css` via `@theme`:
 
-- superfícies: `--color-surface-0..2`
+- superfícies: `--color-surface-0..3`
 - tinta: `--color-ink-0..2`
 - acentos: listen / think / ask / speak
 - fallback textual: `--color-fallback`
+- elevação: `--elev-1..3` (borda + sombra + blur)
+- motion: `--ease-out`, `--ease-in-out`, `--ease-drawer`, `--dur-press|pop|panel`
 
 A esfera usa uniforms hex derivados do mesmo sistema (`src/state/presence-config.ts`).
+Vinheta e halo do shell leem `--state-glow` (hex de `colorA` do estado atual).
+
+## Camadas (z)
+
+| Camada | z | Conteúdo |
+|--------|---|----------|
+| Vinheta | 0 | Glow de fundo reativo ao estado |
+| Halo | 10 | Aura ao redor do globo |
+| Canvas | 20 | Rede neural WebGL |
+| Chrome | 30 | Instrumento + composer |
+| Painéis | 40 | Histórico, terminal, paleta |
+| Confirmação | 50 | Overlay de risco / primeiro uso |
+
+## Interação
+
+- Atração do mouse no globo (pointer fine): neurônios próximos ao cursor puxam para fora; parallax discreto.
+- Hover UI atrás de `@media (hover: hover) and (pointer: fine)`.
+- Paleta `Cmd/Ctrl+K` abre sem animação (ação de teclado frequente).
+- Spotlight em linhas de paleta/histórico via `--mx/--my` na própria linha.
 
 ## Acessibilidade e degradação
 
 - `prefers-reduced-motion` checado em JS; **default SSR = reduzido**
-- movimento reduzido → frame estático (gradiente CSS), cor de estado preservada
-- sem WebGL → mesmo fallback CSS
+- movimento reduzido → sem rotação/pulsos/atração; cor de estado preservada
+- sem WebGL → fallback CSS neural
 - laço pausado em aba oculta; DPR limitado a 1.75
-- foco visível; atalhos: `^H` histórico, `^V` voz, `^L` ouvir, `Esc` cancelar
+- foco visível instantâneo; atalhos: `^H` histórico, `^V` voz, `^L` ouvir, `^K` paleta, `Esc` cancelar
+
+## Ferramentas e política
+
+- Shell: allowlist de leitura executa direto; demais comandos pedem aprovação inline.
+- Toda execução entra no `run-ledger` (memória + `.jarvis/runs.jsonl`).
+- Segredos passam por `redactSecrets` antes de persistir ou exibir.
 
 ## Áudio
 

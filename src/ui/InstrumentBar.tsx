@@ -5,6 +5,7 @@ import { MIC_PERMISSION_LABELS } from "@/audio/mic-permission";
 
 interface InstrumentBarProps {
   privacyClass: PrivacyClass;
+  profile: string;
   modelAlias: string;
   provider: string;
   spentUsd: number;
@@ -23,6 +24,7 @@ function formatUsd(n: number): string {
 
 export function InstrumentBar({
   privacyClass,
+  profile,
   modelAlias,
   provider,
   spentUsd,
@@ -30,21 +32,40 @@ export function InstrumentBar({
   voiceOn,
   micPermission,
 }: InstrumentBarProps) {
+  const micShort =
+    micPermission === "granted"
+      ? "mic:ok"
+      : micPermission === "denied"
+        ? "mic:off"
+        : "mic:?";
+
   return (
-    <header className="grid grid-cols-3 items-center border-b border-surface-2 px-4 py-3 text-xs font-mono text-ink-2">
-      <div className="justify-self-start">
-        <span className="text-ink-1">{privacyClass}</span>
-        <span className="mx-2 text-surface-2">·</span>
-        <span>{MIC_PERMISSION_LABELS[micPermission]}</span>
-      </div>
-      <div className="justify-self-center text-ink-1">
-        {modelAlias} <span className="text-ink-2">· {provider}</span>
-      </div>
-      <div className="justify-self-end flex gap-3">
-        <span>
-          {formatUsd(spentUsd)} / {formatUsd(budgetUsd)}
-        </span>
-        <span>{voiceOn ? "voz:on" : "voz:off"}</span>
+    <header className="chrome-z shrink-0 border-b border-surface-2/80 bg-surface-0/90 px-3 py-2 text-[11px] font-mono text-ink-2 backdrop-blur-sm sm:px-4 sm:text-xs">
+      <div className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="whitespace-nowrap text-ink-1">{privacyClass}</span>
+          <span className="text-surface-2" aria-hidden>
+            ·
+          </span>
+          <span className="whitespace-nowrap text-ink-1">{profile}</span>
+          <span className="text-surface-2" aria-hidden>
+            ·
+          </span>
+          <span className="truncate md:hidden">{micShort}</span>
+          <span className="hidden truncate md:inline">
+            {MIC_PERMISSION_LABELS[micPermission]}
+          </span>
+        </div>
+        <div className="min-w-0 justify-self-end truncate text-ink-1 md:justify-self-center">
+          <span className="whitespace-nowrap">{modelAlias}</span>
+          <span className="text-ink-2"> · {provider}</span>
+        </div>
+        <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 md:col-span-1 md:justify-self-end">
+          <span className="whitespace-nowrap">
+            {formatUsd(spentUsd)} / {formatUsd(budgetUsd)}
+          </span>
+          <span className="whitespace-nowrap">{voiceOn ? "voz:on" : "voz:off"}</span>
+        </div>
       </div>
     </header>
   );

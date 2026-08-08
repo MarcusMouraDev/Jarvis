@@ -1,6 +1,6 @@
 # Jarvis
 
-Jarvis V21 — presença viva. Interface web com esfera WebGL reativa a estado e áudio, sobre Next.js 16 + React Three Fiber.
+Jarvis V22 — presença viva. Interface web com globo neural WebGL reativo a estado, áudio e ponteiro, sobre Next.js 16 + React Three Fiber.
 
 ## Stack
 
@@ -21,6 +21,17 @@ npm run dev
 ```
 
 Abra [http://localhost:3000](http://localhost:3000).
+
+### Atalhos
+
+| Atalho | Ação |
+|--------|------|
+| `⌘/Ctrl+K` | Paleta de comandos (skills, modelos, terminal) |
+| `⌘/Ctrl+H` | Histórico / execuções |
+| `⌘/Ctrl+V` | Alternar voz |
+| `⌘/Ctrl+L` | Alternar ouvir |
+| `Esc` | Cancelar |
+| `/run <cmd>` ou `!<cmd>` | Terminal com política |
 
 ### Provedores
 
@@ -47,6 +58,7 @@ Sem chave configurada, o alias cai no mock (visível na rota `mode: mock`).
 | `npm run lint` | ESLint (flat config Next 16) |
 | `npm run typecheck` | TypeScript sem emit |
 | `npm test` | Suite Vitest |
+| `npm run test:e2e` | Playwright (Chromium) |
 | `npm run skills:sync` | Espelha skills Cursor no projeto |
 | `npm start` | Serve o build |
 

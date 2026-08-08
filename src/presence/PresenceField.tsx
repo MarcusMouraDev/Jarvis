@@ -6,7 +6,7 @@ import { PresenceFallback } from "./PresenceFallback";
 
 const PresenceCanvas = dynamic(
   () => import("./PresenceCanvas").then((m) => m.PresenceCanvas),
-  { ssr: false, loading: () => <PresenceFallback state="idle" /> },
+  { ssr: false, loading: () => <PresenceFallback state="idle" animate /> },
 );
 
 interface PresenceFieldProps {
@@ -24,11 +24,9 @@ export function PresenceField({
   paused,
   webglAvailable,
 }: PresenceFieldProps) {
+  // CSS only when WebGL is unavailable. Reduced motion still uses the neural
+  // mesh — shaders freeze rotation/pulses while color/structure remain.
   if (!webglAvailable) {
-    return <PresenceFallback state={state} animate={false} />;
-  }
-
-  if (reducedMotion) {
     return <PresenceFallback state={state} animate={false} />;
   }
 

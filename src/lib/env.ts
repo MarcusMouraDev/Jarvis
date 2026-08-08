@@ -25,3 +25,19 @@ export function cursorModelId(): string {
 export function cursorAgentCwd(): string {
   return optionalEnv("CURSOR_AGENT_CWD", process.cwd());
 }
+
+export function localOpenAiBaseUrl(): string {
+  return optionalEnv("LOCAL_OPENAI_BASE_URL", "");
+}
+
+export function localOpenAiApiKey(): string {
+  return optionalEnv("LOCAL_OPENAI_API_KEY", "not-needed");
+}
+
+export function localOpenAiModel(): string {
+  return optionalEnv("LOCAL_OPENAI_MODEL", "local");
+}
+
+export function hasLocalOpenAi(): boolean {
+  return Boolean(localOpenAiBaseUrl().trim());
+}

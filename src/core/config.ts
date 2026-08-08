@@ -89,7 +89,7 @@ export function loadConfigFromYaml(raw: string): JarvisConfig {
 
 /** Client-safe mirror of config/models.yaml (parsed at build/test via loadConfigFromYaml). */
 export const jarvisConfig: JarvisConfig = {
-  version: 21,
+  version: 23,
   mode: "cloud-only",
   defaultModel: "gemini",
   models: {
@@ -116,6 +116,12 @@ export const jarvisConfig: JarvisConfig = {
       adapter: "codex-cli",
       auth: "chatgpt-account-in-cursor",
       fallback: [],
+    },
+    "local-openai": {
+      provider: "local",
+      adapter: "openai-compatible",
+      envKey: "LOCAL_OPENAI_BASE_URL",
+      fallback: ["gemini"],
     },
   },
   voice: {

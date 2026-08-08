@@ -1,0 +1,19 @@
+version: 1
+prompts:
+  - id: greeting
+    privacy: internal
+    profile: conversa
+    text: "Olá Jarvis, responda em uma frase quem você é."
+  - id: reasoning
+    privacy: internal
+    profile: pesquisa
+    text: "Explique em 3 bullets a diferença entre roteamento por fallback e smart routing."
+  - id: confidential-local
+    privacy: confidential
+    profile: conversa
+    alias: local-openai
+    text: "Resuma em uma linha por que dados confidenciais preferem provider local."
+  - id: code-context
+    privacy: internal
+    profile: monitor
+    text: "Liste duas boas práticas para streaming SSE em adapters OpenAI-compatible."

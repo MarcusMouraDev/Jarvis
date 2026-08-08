@@ -1,6 +1,6 @@
 import { lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 const workspaceRequestSchema = z.discriminatedUnion("kind", [
@@ -19,6 +19,8 @@ export type ResolvedWorkspace =
 
 export interface WorkspaceResolverOptions {
   projectsRoot?: string;
+  /** Test seam for filesystem lookup failures at the policy boundary. */
+  lstat?: typeof lstatSync;
 }
 
 function fail(message: string): never {
@@ -27,6 +29,10 @@ function fail(message: string): never {
 
 function getConfiguredProjectsRoot(options: WorkspaceResolverOptions): string {
   return options.projectsRoot || process.env.JARVIS_PROJECTS_ROOT || join(homedir(), "Projetos");
+}
+
+function getLstat(options: WorkspaceResolverOptions): typeof lstatSync {
+  return options.lstat ?? lstatSync;
 }
 
 function hasTraversal(value: string): boolean {
@@ -38,16 +44,38 @@ function isContained(root: string, candidate: string): boolean {
   return pathFromRoot !== "" && !pathFromRoot.startsWith(`..${sep}`) && pathFromRoot !== ".." && !isAbsolute(pathFromRoot);
 }
 
+function assertNoSymlinkPathComponents(
+  value: string,
+  lstat: typeof lstatSync,
+  label: string,
+) {
+  const absolute = resolve(value);
+  const parsed = parse(absolute);
+  let current = parsed.root;
+  for (const component of absolute.slice(parsed.root.length).split(sep).filter(Boolean)) {
+    let status;
+    current = join(current, component);
+    try {
+      status = lstat(current);
+    } catch {
+      fail(`${label} does not exist`);
+    }
+    if (status.isSymbolicLink()) fail(`${label} contains a symlink`);
+  }
+}
+
 function resolveProjectsRoot(options: WorkspaceResolverOptions): {
   supplied: string;
   real: string;
 } {
   const configuredRoot = getConfiguredProjectsRoot(options);
   if (hasTraversal(configuredRoot)) fail("projects root traversal");
+  const lstat = getLstat(options);
+  assertNoSymlinkPathComponents(configuredRoot, lstat, "projects root");
 
   let rootStatus;
   try {
-    rootStatus = lstatSync(configuredRoot);
+    rootStatus = lstat(configuredRoot);
   } catch {
     fail("projects root does not exist");
   }
@@ -61,6 +89,7 @@ function resolveProjectsRoot(options: WorkspaceResolverOptions): {
 function assertRealExistingWorkspace(
   root: { supplied: string; real: string },
   suppliedPath: string,
+  lstat: typeof lstatSync,
 ): string {
   if (hasTraversal(suppliedPath)) fail("workspace traversal");
 
@@ -75,7 +104,7 @@ function assertRealExistingWorkspace(
     current = join(current, component);
     let status;
     try {
-      status = lstatSync(current);
+      status = lstat(current);
     } catch {
       fail("workspace does not exist");
     }
@@ -100,17 +129,20 @@ export function resolveWorkspace(
   if (workspace.kind === "existing") {
     return Object.freeze({
       kind: "existing" as const,
-      path: assertRealExistingWorkspace(root, workspace.path),
+      path: assertRealExistingWorkspace(root, workspace.path, getLstat(options)),
     });
   }
 
   if (!newWorkspaceName.test(workspace.name)) fail("new workspace name");
   const candidate = join(root.real, workspace.name);
   try {
-    lstatSync(candidate);
+    getLstat(options)(candidate);
     fail("new workspace already exists");
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Invalid workspace:")) throw error;
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      fail("could not verify new workspace");
+    }
   }
 
   return Object.freeze({ kind: "new" as const, name: workspace.name, path: candidate });

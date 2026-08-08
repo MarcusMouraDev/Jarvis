@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import type { WorkspaceRequest } from "./workspace-policy";
+import type { ResolvedWorkspace, WorkspaceRequest } from "./workspace-policy";
 
 const agentIds = ["Hermes", "Planner", "Developer", "Builder"] as const;
 const riskSchema = z.enum(["read", "network", "write", "system"]);
@@ -75,15 +75,21 @@ function fail(message: string): never {
   throw new Error(`Invalid agent catalog: ${message}`);
 }
 
+function ownValue<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+}
+
 function assertNoFallbackCycles(models: Record<string, { fallback: string[] }>) {
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const visit = (model: string) => {
     if (visiting.has(model)) fail(`fallback cycle at ${model}`);
     if (visited.has(model)) return;
+    const definition = ownValue(models, model);
+    if (!definition) fail(`unknown fallback model ${model}`);
     visiting.add(model);
-    for (const fallback of models[model].fallback) {
-      if (!models[fallback]) fail(`unknown fallback model ${fallback}`);
+    for (const fallback of definition.fallback) {
+      if (!ownValue(models, fallback)) fail(`unknown fallback model ${fallback}`);
       visit(fallback);
     }
     visiting.delete(model);
@@ -100,10 +106,10 @@ function assertAgentCompatibility(
   defaultModel: string,
 ) {
   const model = agent.model ?? defaultModel;
-  if (!models[model]) fail(`${id} references unknown model ${model}`);
+  if (!ownValue(models, model)) fail(`${id} references unknown model ${model}`);
 
   for (const toolId of agent.tools) {
-    const tool = tools[toolId];
+    const tool = ownValue(tools, toolId);
     if (!tool) fail(`${id} references unknown tool ${toolId}`);
     if (riskRank[tool.risk] > riskRank[agent.max_risk]) {
       fail(`${id} allows tool risk above max risk`);
@@ -123,7 +129,7 @@ export function loadAgentCatalogFromYaml(raw: string): AgentCatalog {
   if (Object.keys(parsed.models).length === 0 || Object.keys(parsed.tools).length === 0) {
     fail("models and tools must not be empty");
   }
-  if (!parsed.models[parsed.default_model]) fail("unknown default model");
+  if (!ownValue(parsed.models, parsed.default_model)) fail("unknown default model");
   assertNoFallbackCycles(parsed.models);
 
   const actualAgentIds = Object.keys(parsed.agents).sort();
@@ -133,7 +139,8 @@ export function loadAgentCatalogFromYaml(raw: string): AgentCatalog {
 
   const agents = {} as AgentCatalog["agents"];
   for (const id of agentIds) {
-    const agent = parsed.agents[id];
+    const agent = ownValue(parsed.agents, id);
+    if (!agent) fail(`missing agent ${id}`);
     assertAgentCompatibility(agent, id, parsed.models, parsed.tools, parsed.default_model);
     agents[id] = {
       id,
@@ -158,7 +165,7 @@ export function loadAgentCatalogFromDisk(): AgentCatalog {
 }
 
 export function getAgent(catalog: AgentCatalog, agentId: string): AgentDefinition | null {
-  return catalog.agents[agentId as (typeof agentIds)[number]] ?? null;
+  return ownValue(catalog.agents, agentId) ?? null;
 }
 
 /** Validates the caller's requested workspace kind before it is resolved for a run. */
@@ -176,6 +183,28 @@ export function resolveWorkspaceForAgent(
   };
   if (!allowedKinds[agent.workspaceMode].includes(workspace.kind)) {
     fail(`${agent.id} is incompatible with ${workspace.kind} workspace`);
+  }
+  return agent;
+}
+
+/** Applies post-resolution restrictions that require filesystem facts. */
+export function assertResolvedWorkspaceForAgent(
+  catalog: AgentCatalog,
+  agentId: string,
+  workspace: ResolvedWorkspace,
+): AgentDefinition {
+  const agent = resolveWorkspaceForAgent(catalog, agentId, workspace);
+  if (agent.workspaceMode !== "existing_repo") return agent;
+
+  if (workspace.kind !== "existing") fail(`${agent.id} requires an existing workspace`);
+  let gitEntry;
+  try {
+    gitEntry = lstatSync(resolve(workspace.path, ".git"));
+  } catch {
+    fail(`${agent.id} requires a Git repository root`);
+  }
+  if (gitEntry.isSymbolicLink() || (!gitEntry.isDirectory() && !gitEntry.isFile())) {
+    fail(`${agent.id} requires a Git repository root`);
   }
   return agent;
 }

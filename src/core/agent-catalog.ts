@@ -1,4 +1,5 @@
-import { lstatSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
@@ -62,6 +63,11 @@ export interface AgentCatalog {
   models: Record<string, { fallback: string[] }>;
   tools: Record<string, { risk: AgentRisk }>;
   agents: Record<(typeof agentIds)[number], AgentDefinition>;
+}
+
+export interface GitRepositoryValidationOptions {
+  /** Test seam for the read-only Git probe. */
+  execFile?: typeof execFileSync;
 }
 
 const riskRank: Record<AgentRisk, number> = {
@@ -192,6 +198,7 @@ export function assertResolvedWorkspaceForAgent(
   catalog: AgentCatalog,
   agentId: string,
   workspace: ResolvedWorkspace,
+  options: GitRepositoryValidationOptions = {},
 ): AgentDefinition {
   const agent = resolveWorkspaceForAgent(catalog, agentId, workspace);
   if (agent.workspaceMode !== "existing_repo") return agent;
@@ -204,6 +211,23 @@ export function assertResolvedWorkspaceForAgent(
     fail(`${agent.id} requires a Git repository root`);
   }
   if (gitEntry.isSymbolicLink() || (!gitEntry.isDirectory() && !gitEntry.isFile())) {
+    fail(`${agent.id} requires a Git repository root`);
+  }
+  let topLevel: string;
+  try {
+    topLevel = (options.execFile ?? execFileSync)(
+      "git",
+      ["-C", workspace.path, "rev-parse", "--show-toplevel"],
+      { encoding: "utf8", timeout: 3_000, stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+  } catch {
+    fail(`${agent.id} requires a Git repository root`);
+  }
+  try {
+    if (realpathSync(topLevel) !== workspace.path) {
+      fail(`${agent.id} requires a Git repository root`);
+    }
+  } catch {
     fail(`${agent.id} requires a Git repository root`);
   }
   return agent;

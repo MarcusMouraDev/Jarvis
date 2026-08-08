@@ -1,4 +1,12 @@
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -157,9 +165,14 @@ describe("agent catalog", () => {
     const root = realpathSync(temporaryRoot);
     const plainDirectory = join(root, "plain");
     const repository = join(root, "repository");
+    const emptyGitDirectory = join(root, "empty-git-directory");
+    const arbitraryGitFile = join(root, "arbitrary-git-file");
     mkdirSync(plainDirectory);
-    mkdirSync(repository);
-    mkdirSync(join(repository, ".git"));
+    execFileSync("git", ["init", "--quiet", repository]);
+    mkdirSync(emptyGitDirectory);
+    mkdirSync(join(emptyGitDirectory, ".git"));
+    mkdirSync(arbitraryGitFile);
+    writeFileSync(join(arbitraryGitFile, ".git"), "not a worktree\n");
     const catalog = loadAgentCatalogFromYaml(validCatalog);
 
     const plainWorkspace = resolveWorkspace(
@@ -170,6 +183,14 @@ describe("agent catalog", () => {
       { kind: "existing", path: repository },
       { projectsRoot: root },
     );
+    const emptyGitDirectoryWorkspace = resolveWorkspace(
+      { kind: "existing", path: emptyGitDirectory },
+      { projectsRoot: root },
+    );
+    const arbitraryGitFileWorkspace = resolveWorkspace(
+      { kind: "existing", path: arbitraryGitFile },
+      { projectsRoot: root },
+    );
 
     expect(() =>
       assertResolvedWorkspaceForAgent(catalog, "Developer", plainWorkspace),
@@ -177,5 +198,38 @@ describe("agent catalog", () => {
     expect(
       assertResolvedWorkspaceForAgent(catalog, "Developer", repositoryWorkspace),
     ).toMatchObject({ id: "Developer" });
+    expect(() =>
+      assertResolvedWorkspaceForAgent(
+        catalog,
+        "Developer",
+        emptyGitDirectoryWorkspace,
+      ),
+    ).toThrow();
+    expect(() =>
+      assertResolvedWorkspaceForAgent(catalog, "Developer", arbitraryGitFileWorkspace),
+    ).toThrow();
+  });
+
+  it("fails closed when Git is unavailable", () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-agent-catalog-"));
+    tempPaths.push(root);
+    const projectsRoot = realpathSync(root);
+    const repository = join(projectsRoot, "repository");
+    execFileSync("git", ["init", "--quiet", repository]);
+    const catalog = loadAgentCatalogFromYaml(validCatalog);
+    const workspace = resolveWorkspace(
+      { kind: "existing", path: repository },
+      { projectsRoot },
+    );
+
+    expect(() =>
+      assertResolvedWorkspaceForAgent(catalog, "Developer", workspace, {
+        execFile: (() => {
+          const error = new Error("git unavailable") as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        }) as typeof execFileSync,
+      }),
+    ).toThrow();
   });
 });

@@ -5,6 +5,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { getJarvisDataDir } from "@/core/data-dir";
 import type { ScheduledJob } from "./types";
 
 interface SchedulerStore {
@@ -15,7 +16,7 @@ interface SchedulerStore {
 const STORE_VERSION = 1;
 
 function storePath(): string {
-  return path.join(process.cwd(), ".jarvis", "scheduler.json");
+  return path.join(getJarvisDataDir(), "scheduler.json");
 }
 
 function emptyStore(): SchedulerStore {

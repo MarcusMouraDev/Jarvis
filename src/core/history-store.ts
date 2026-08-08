@@ -6,6 +6,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { jarvisConfig } from "./config";
+import { getJarvisDataDir } from "./data-dir";
 import { redactSecrets } from "./policy";
 
 export interface HistoryMessage {
@@ -23,7 +24,7 @@ let hydrated = false;
 const MAX_STORED_TEXT = 4000;
 
 function historyDir(): string {
-  return path.join(process.cwd(), ".jarvis");
+  return getJarvisDataDir();
 }
 
 function historyPath(): string {

@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { clearProfileCache } from "@/core/profiles";
 import { clearSchedulerStore } from "./store";
 import { createJob, executeScheduledJob } from "./engine";
 
 const originalFlag = process.env.JARVIS_SCHEDULER;
 const originalExecutor = process.env.JARVIS_TOOL_EXECUTOR;
+const originalDataDir = process.env.JARVIS_DATA_DIR;
 
 describe("scheduler", () => {
+  let dataDir: string;
+
   beforeEach(() => {
+    dataDir = mkdtempSync(path.join(tmpdir(), "jarvis-scheduler-"));
+    process.env.JARVIS_DATA_DIR = dataDir;
     clearSchedulerStore();
     clearProfileCache();
     process.env.JARVIS_SCHEDULER = "1";
@@ -22,6 +30,9 @@ describe("scheduler", () => {
     else process.env.JARVIS_SCHEDULER = originalFlag;
     if (originalExecutor === undefined) delete process.env.JARVIS_TOOL_EXECUTOR;
     else process.env.JARVIS_TOOL_EXECUTOR = originalExecutor;
+    rmSync(dataDir, { recursive: true, force: true });
+    if (originalDataDir === undefined) delete process.env.JARVIS_DATA_DIR;
+    else process.env.JARVIS_DATA_DIR = originalDataDir;
     delete process.env.JARVIS_MCP_BRASIL;
   });
 

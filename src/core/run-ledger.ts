@@ -7,6 +7,7 @@ import {
   statSync,
 } from "node:fs";
 import path from "node:path";
+import { getJarvisDataDir } from "./data-dir";
 import { redactSecrets } from "./policy";
 
 export type RunKind =
@@ -74,7 +75,7 @@ const ROTATE_BYTES = 5 * 1024 * 1024;
 let hydrated = false;
 
 function ledgerDir(): string {
-  return path.join(process.cwd(), ".jarvis");
+  return getJarvisDataDir();
 }
 
 function ledgerPath(): string {

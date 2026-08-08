@@ -1,4 +1,6 @@
-# Jarvis V22 — presença viva
+# Jarvis V23 — presença viva
+
+Este documento descreve somente o sistema visual. Para arquitetura e evolução segura, consulte [`docs/architecture/overview.md`](docs/architecture/overview.md) e [`docs/security/safe-agent-core.md`](docs/security/safe-agent-core.md).
 
 ## Sistema de estado cromático
 
@@ -55,11 +57,7 @@ Vinheta e halo do shell leem `--state-glow` (hex de `colorA` do estado atual).
 - laço pausado em aba oculta; DPR limitado a 1.75
 - foco visível instantâneo; atalhos: `^H` histórico, `^V` voz, `^L` ouvir, `^K` paleta, `Esc` cancelar
 
-## Ferramentas e política
-
-- Shell: allowlist de leitura executa direto; demais comandos pedem aprovação inline.
-- Toda execução entra no `run-ledger` (memória + `.jarvis/runs.jsonl`).
-- Segredos passam por `redactSecrets` antes de persistir ou exibir.
+Os controles operacionais e a política de ferramentas pertencem à [arquitetura](docs/architecture/overview.md) e à [segurança](docs/security/safe-agent-core.md).
 
 ## Áudio
 

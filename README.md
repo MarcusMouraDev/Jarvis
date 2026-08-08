@@ -1,6 +1,6 @@
 # Jarvis
 
-Jarvis V22 — presença viva. Interface web com globo neural WebGL reativo a estado, áudio e ponteiro, sobre Next.js 16 + React Three Fiber.
+Jarvis V23 — presença viva. Interface web com globo neural WebGL reativo a estado, áudio e ponteiro, sobre Next.js 16 + React Three Fiber.
 
 ## Stack
 
@@ -73,4 +73,4 @@ Sem chave configurada, o alias cai no mock (visível na rota `mode: mock`).
 | asking | Vermelho — precisa de você |
 | failure | Sem cor nova — perde coerência |
 
-Configuração de modelos: `config/models.yaml`. Sistema visual: `DESIGN.md`.
+Configuração de modelos: `config/models.yaml`. Sistema visual: `DESIGN.md`. Arquitetura, segurança e evolução: [`docs/`](docs/README.md).

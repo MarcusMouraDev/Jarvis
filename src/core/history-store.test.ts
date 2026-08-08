@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  existsSync,
-  readFileSync,
+  mkdtempSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   appendMessage,
@@ -12,36 +11,22 @@ import {
   searchMessages,
 } from "@/core/history-store";
 
-const historyDir = path.join(process.cwd(), ".jarvis");
-const historyFile = path.join(historyDir, "history.jsonl");
-
-function backupHistory() {
-  if (existsSync(historyFile)) {
-    return readFileSync(historyFile, "utf8");
-  }
-  return null;
-}
-
-function restoreHistory(content: string | null) {
-  if (content === null) {
-    if (existsSync(historyFile)) rmSync(historyFile);
-    return;
-  }
-  writeFileSync(historyFile, content, "utf8");
-}
+const originalDataDir = process.env.JARVIS_DATA_DIR;
 
 describe("history-store", () => {
-  let savedHistory: string | null;
+  let dataDir: string;
 
   beforeEach(() => {
-    savedHistory = backupHistory();
+    dataDir = mkdtempSync(path.join(tmpdir(), "jarvis-history-"));
+    process.env.JARVIS_DATA_DIR = dataDir;
     clearHistory();
-    if (existsSync(historyFile)) rmSync(historyFile);
   });
 
   afterEach(() => {
     clearHistory();
-    restoreHistory(savedHistory);
+    rmSync(dataDir, { recursive: true, force: true });
+    if (originalDataDir === undefined) delete process.env.JARVIS_DATA_DIR;
+    else process.env.JARVIS_DATA_DIR = originalDataDir;
   });
 
   it("persiste e busca mensagens", () => {

@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   existsSync,
+  mkdtempSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   addStep,
@@ -20,42 +21,26 @@ import {
   startRun,
 } from "@/core/run-ledger";
 
-const ledgerDir = path.join(process.cwd(), ".jarvis");
-const ledgerFile = path.join(ledgerDir, "runs.jsonl");
-
-function backupLedger() {
-  if (existsSync(ledgerFile)) {
-    return readLedgerContent();
-  }
-  return null;
-}
-
-function readLedgerContent() {
-  return readFileSync(ledgerFile, "utf8");
-}
-
-function restoreLedger(content: string | null) {
-  if (content === null) {
-    if (existsSync(ledgerFile)) rmSync(ledgerFile);
-    return;
-  }
-  mkdirSync(ledgerDir, { recursive: true });
-  writeFileSync(ledgerFile, content, "utf8");
-}
+const originalDataDir = process.env.JARVIS_DATA_DIR;
 
 describe("run-ledger", () => {
-  let savedLedger: string | null;
+  let dataDir: string;
+  let ledgerDir: string;
+  let ledgerFile: string;
 
   beforeEach(() => {
-    savedLedger = backupLedger();
+    dataDir = mkdtempSync(path.join(tmpdir(), "jarvis-ledger-"));
+    process.env.JARVIS_DATA_DIR = dataDir;
+    ledgerDir = dataDir;
+    ledgerFile = path.join(ledgerDir, "runs.jsonl");
     clearLedger();
-    if (existsSync(ledgerFile)) rmSync(ledgerFile);
-    if (existsSync(`${ledgerFile}.1`)) rmSync(`${ledgerFile}.1`);
   });
 
   afterEach(() => {
     clearLedger();
-    restoreLedger(savedLedger);
+    rmSync(dataDir, { recursive: true, force: true });
+    if (originalDataDir === undefined) delete process.env.JARVIS_DATA_DIR;
+    else process.env.JARVIS_DATA_DIR = originalDataDir;
   });
 
   it("ciclo de vida do run com steps", () => {

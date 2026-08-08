@@ -17,6 +17,17 @@ export type JsonValue =
 export interface CoreSession {
   sessionId: string;
   createdAt: string;
+  csrfHash: string | null;
+  defaultAgentId: string | null;
+  expiresAt: string | null;
+  lastSeenAt: string | null;
+}
+
+export interface SafeCoreSession extends CoreSession {
+  csrfHash: string;
+  defaultAgentId: string;
+  expiresAt: string;
+  lastSeenAt: string;
 }
 
 export interface CoreRun {
@@ -52,6 +63,15 @@ export interface CoreEvent {
 export interface CreateSessionInput {
   sessionId?: string;
   createdAt?: string;
+}
+
+export interface CreateSafeSessionInput {
+  sessionId: string;
+  csrfHash: string;
+  defaultAgentId: string;
+  expiresAt: string;
+  createdAt: string;
+  lastSeenAt: string;
 }
 
 export interface CreateRunInput {
@@ -158,6 +178,15 @@ const migrations = [
   );
 `,
   },
+  {
+    version: 2,
+    sql: `
+  ALTER TABLE sessions ADD COLUMN csrf_hash TEXT;
+  ALTER TABLE sessions ADD COLUMN default_agent_id TEXT;
+  ALTER TABLE sessions ADD COLUMN expires_at TEXT;
+  ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;
+`,
+  },
 ] as const;
 
 function now(): string {
@@ -220,8 +249,22 @@ function asJsonValue(value: unknown): JsonValue {
 
 function mapSession(row: unknown): CoreSession | null {
   if (!row) return null;
-  const value = row as { session_id: string; created_at: string };
-  return { sessionId: value.session_id, createdAt: value.created_at };
+  const value = row as {
+    session_id: string;
+    created_at: string;
+    csrf_hash: string | null;
+    default_agent_id: string | null;
+    expires_at: string | null;
+    last_seen_at: string | null;
+  };
+  return {
+    sessionId: value.session_id,
+    createdAt: value.created_at,
+    csrfHash: value.csrf_hash,
+    defaultAgentId: value.default_agent_id,
+    expiresAt: value.expires_at,
+    lastSeenAt: value.last_seen_at,
+  };
 }
 
 function mapRun(row: unknown): CoreRun | null {
@@ -602,10 +645,43 @@ export class CoreStore {
     const session: CoreSession = {
       sessionId: assertText(input.sessionId ?? crypto.randomUUID(), "session id"),
       createdAt: input.createdAt ?? now(),
+      csrfHash: null,
+      defaultAgentId: null,
+      expiresAt: null,
+      lastSeenAt: null,
     };
     this.database
       .prepare("INSERT INTO sessions(session_id, created_at) VALUES (?, ?)")
       .run(session.sessionId, session.createdAt);
+    return session;
+  }
+
+  createSafeSession(input: CreateSafeSessionInput): SafeCoreSession {
+    if (!/^[a-f\d]{64}$/i.test(input.csrfHash)) {
+      throw new TypeError("Invalid CSRF hash");
+    }
+    const session: SafeCoreSession = {
+      sessionId: assertText(input.sessionId, "session id"),
+      csrfHash: assertText(input.csrfHash, "CSRF hash"),
+      defaultAgentId: assertText(input.defaultAgentId, "default agent id"),
+      expiresAt: assertText(input.expiresAt, "session expiry"),
+      createdAt: assertText(input.createdAt, "session creation time"),
+      lastSeenAt: assertText(input.lastSeenAt, "session last seen time"),
+    };
+    this.database
+      .prepare(
+        `INSERT INTO sessions(
+           session_id, created_at, csrf_hash, default_agent_id, expires_at, last_seen_at
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        session.sessionId,
+        session.createdAt,
+        session.csrfHash,
+        session.defaultAgentId,
+        session.expiresAt,
+        session.lastSeenAt,
+      );
     return session;
   }
 
@@ -615,6 +691,12 @@ export class CoreStore {
         .prepare("SELECT * FROM sessions WHERE session_id = ?")
         .get(sessionId),
     );
+  }
+
+  updateSessionLastSeen(sessionId: string, lastSeenAt: string): void {
+    this.database
+      .prepare("UPDATE sessions SET last_seen_at = ? WHERE session_id = ?")
+      .run(assertText(lastSeenAt, "session last seen time"), sessionId);
   }
 
   createRun(input: CreateRunInput): CoreRun {

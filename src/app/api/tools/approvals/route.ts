@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { decideApproval, getApproval } from "@/core/run-ledger";
+import { isSafeAgentCoreEnabled } from "@/integrations/flags";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  if (isSafeAgentCoreEnabled()) {
+    return NextResponse.json(
+      { error: "legacy_executor_disabled" },
+      { status: 410 },
+    );
+  }
+
   const body = (await req.json().catch(() => null)) as {
     approvalId?: string;
     decision?: "approved" | "denied";

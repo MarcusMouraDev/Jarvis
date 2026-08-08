@@ -9,6 +9,7 @@ import {
 } from "@/core/run-ledger";
 import { classifyCommand } from "@/tools/shell-policy";
 import { runShellCommand } from "@/tools/shell-run";
+import { isSafeAgentCoreEnabled } from "@/integrations/flags";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,13 @@ function sse(data: unknown): string {
 }
 
 export async function POST(req: Request) {
+  if (isSafeAgentCoreEnabled()) {
+    return Response.json(
+      { error: "legacy_executor_disabled" },
+      { status: 410 },
+    );
+  }
+
   let parsed: z.infer<typeof bodySchema>;
   try {
     parsed = bodySchema.parse(await req.json());

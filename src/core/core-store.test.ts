@@ -65,7 +65,46 @@ describe("core-store", () => {
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all()
         .map((row) => (row as { version: number }).version),
-    ).toEqual([1]);
+    ).toEqual([1, 2]);
+    expect(
+      database
+        .prepare("PRAGMA table_info(sessions)")
+        .all()
+        .map((row) => (row as { name: string }).name),
+    ).toEqual([
+      "session_id",
+      "created_at",
+      "csrf_hash",
+      "default_agent_id",
+      "expires_at",
+      "last_seen_at",
+    ]);
+  });
+
+  it("persists complete safe sessions and updates last_seen separately", () => {
+    store = openCoreStore();
+    const session = store.createSafeSession({
+      sessionId: "opaque-session",
+      csrfHash: "a".repeat(64),
+      defaultAgentId: "Hermes",
+      expiresAt: "2026-08-09T10:00:00.000Z",
+      createdAt: "2026-08-08T10:00:00.000Z",
+      lastSeenAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    expect(session).toEqual({
+      sessionId: "opaque-session",
+      csrfHash: "a".repeat(64),
+      defaultAgentId: "Hermes",
+      expiresAt: "2026-08-09T10:00:00.000Z",
+      createdAt: "2026-08-08T10:00:00.000Z",
+      lastSeenAt: "2026-08-08T10:00:00.000Z",
+    });
+
+    store.updateSessionLastSeen("opaque-session", "2026-08-08T11:00:00.000Z");
+    expect(store.getSession("opaque-session")?.lastSeenAt).toBe(
+      "2026-08-08T11:00:00.000Z",
+    );
   });
 
   it("persists typed sessions, runs and messages across a restart", () => {

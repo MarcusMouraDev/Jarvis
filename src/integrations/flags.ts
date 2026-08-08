@@ -18,3 +18,7 @@ export function isBrowserMockMode(): boolean {
 export function isSchedulerEnabled(): boolean {
   return process.env.JARVIS_SCHEDULER === "1";
 }
+
+export function isSafeAgentCoreEnabled(): boolean {
+  return process.env.JARVIS_SAFE_AGENT_CORE === "1";
+}

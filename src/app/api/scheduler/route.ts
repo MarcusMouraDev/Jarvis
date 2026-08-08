@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isSchedulerFeatureEnabled } from "@/scheduler/engine";
 import { createJob, pauseJob, runDueJobs } from "@/scheduler/engine";
 import { listJobs } from "@/scheduler/store";
+import { isSafeAgentCoreEnabled } from "@/integrations/flags";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,13 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (isSafeAgentCoreEnabled()) {
+    return NextResponse.json(
+      { error: "legacy_executor_disabled" },
+      { status: 410 },
+    );
+  }
+
   if (!isSchedulerFeatureEnabled()) {
     return NextResponse.json({ error: "scheduler_disabled" }, { status: 403 });
   }

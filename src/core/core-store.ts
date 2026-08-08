@@ -102,6 +102,81 @@ export interface AppendEventInput {
   createdAt?: string;
 }
 
+export interface SafeToolInvocation {
+  invocationId: string;
+  sessionId: string;
+  runId: string;
+  toolId: string;
+  toolVersion: string;
+  input: JsonValue;
+  inputDigest: string;
+  workspace: JsonValue;
+  workspaceDigest: string;
+  bindingDigest: string;
+  effect: JsonValue;
+  sideEffect: "none" | "local" | "external";
+  idempotent: boolean;
+  status: string;
+  output: JsonValue | null;
+  error: JsonValue | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface SafeToolApproval {
+  approvalId: string;
+  sessionId: string;
+  runId: string;
+  invocationId: string;
+  toolId: string;
+  toolVersion: string;
+  bindingDigest: string;
+  effect: JsonValue;
+  status: "pending" | "approved" | "denied" | "expired" | "consumed";
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  consumedAt: string | null;
+}
+
+export interface CreateSafeInvocationInput {
+  invocationId: string;
+  approvalId?: string;
+  sessionId: string;
+  runId: string;
+  toolId: string;
+  toolVersion: string;
+  input: JsonValue;
+  inputDigest: string;
+  workspace: JsonValue;
+  workspaceDigest: string;
+  bindingDigest: string;
+  effect: JsonValue;
+  sideEffect: "none" | "local" | "external";
+  idempotent: boolean;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+export interface ClaimSafeInvocationInput {
+  invocationId: string;
+  sessionId: string;
+  runId: string;
+  toolId: string;
+  toolVersion: string;
+  input: JsonValue;
+  inputDigest: string;
+  workspace: JsonValue;
+  workspaceDigest: string;
+  bindingDigest: string;
+  effect: JsonValue;
+  sideEffect: "none" | "local" | "external";
+  idempotent: boolean;
+  now: string;
+}
+
 const migrations = [
   {
     version: 1,
@@ -185,6 +260,57 @@ const migrations = [
   ALTER TABLE sessions ADD COLUMN default_agent_id TEXT;
   ALTER TABLE sessions ADD COLUMN expires_at TEXT;
   ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;
+`,
+  },
+  {
+    version: 3,
+    sql: `
+  ALTER TABLE tool_invocations ADD COLUMN session_id TEXT REFERENCES sessions(session_id) ON DELETE CASCADE;
+  ALTER TABLE tool_invocations ADD COLUMN tool_version TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN input_digest TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN workspace_json TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN workspace_digest TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN binding_digest TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN effect_json TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN side_effect TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN idempotent INTEGER;
+  ALTER TABLE tool_invocations ADD COLUMN error_json TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN started_at TEXT;
+  ALTER TABLE tool_invocations ADD COLUMN completed_at TEXT;
+
+  ALTER TABLE approvals ADD COLUMN session_id TEXT REFERENCES sessions(session_id) ON DELETE CASCADE;
+  ALTER TABLE approvals ADD COLUMN invocation_id TEXT REFERENCES tool_invocations(invocation_id) ON DELETE CASCADE;
+  ALTER TABLE approvals ADD COLUMN tool_name TEXT;
+  ALTER TABLE approvals ADD COLUMN tool_version TEXT;
+  ALTER TABLE approvals ADD COLUMN binding_digest TEXT;
+  ALTER TABLE approvals ADD COLUMN effect_json TEXT;
+  ALTER TABLE approvals ADD COLUMN expires_at TEXT;
+  ALTER TABLE approvals ADD COLUMN consumed_at TEXT;
+
+  CREATE UNIQUE INDEX safe_approval_per_invocation
+    ON approvals(invocation_id) WHERE invocation_id IS NOT NULL;
+  CREATE UNIQUE INDEX safe_one_effect_per_run
+    ON tool_invocations(run_id)
+    WHERE side_effect IN ('local', 'external') AND status IN ('executing', 'unknown');
+
+  CREATE TRIGGER safe_approval_insert_status
+    BEFORE INSERT ON approvals
+    WHEN NEW.invocation_id IS NOT NULL AND NEW.status <> 'pending'
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid_safe_approval_status');
+    END;
+
+  CREATE TRIGGER safe_approval_status_transition
+    BEFORE UPDATE OF status ON approvals
+    WHEN OLD.invocation_id IS NOT NULL
+      AND NEW.status <> OLD.status
+      AND NOT (
+        (OLD.status = 'pending' AND NEW.status IN ('approved', 'denied', 'expired'))
+        OR (OLD.status = 'approved' AND NEW.status IN ('consumed', 'expired'))
+      )
+    BEGIN
+      SELECT RAISE(ABORT, 'invalid_safe_approval_transition');
+    END;
 `,
   },
 ] as const;
@@ -329,6 +455,55 @@ function mapEvent(row: unknown): CoreEvent {
     type: value.type,
     payload: parseJson(value.payload_json),
     createdAt: value.created_at,
+  };
+}
+
+function mapSafeInvocation(row: unknown): SafeToolInvocation | null {
+  if (!row) return null;
+  const value = row as Record<string, string | number | null>;
+  if (!value.session_id || !value.tool_version || !value.input_digest) return null;
+  return {
+    invocationId: String(value.invocation_id),
+    sessionId: String(value.session_id),
+    runId: String(value.run_id),
+    toolId: String(value.tool_name),
+    toolVersion: String(value.tool_version),
+    input: parseJson(String(value.input_json)),
+    inputDigest: String(value.input_digest),
+    workspace: parseJson(String(value.workspace_json)),
+    workspaceDigest: String(value.workspace_digest),
+    bindingDigest: String(value.binding_digest),
+    effect: parseJson(String(value.effect_json)),
+    sideEffect: value.side_effect as SafeToolInvocation["sideEffect"],
+    idempotent: value.idempotent === 1,
+    status: String(value.status),
+    output: value.output_json ? parseJson(String(value.output_json)) : null,
+    error: value.error_json ? parseJson(String(value.error_json)) : null,
+    createdAt: String(value.created_at),
+    updatedAt: String(value.updated_at),
+    startedAt: value.started_at ? String(value.started_at) : null,
+    completedAt: value.completed_at ? String(value.completed_at) : null,
+  };
+}
+
+function mapSafeApproval(row: unknown): SafeToolApproval | null {
+  if (!row) return null;
+  const value = row as Record<string, string | null>;
+  if (!value.session_id || !value.invocation_id || !value.tool_version) return null;
+  return {
+    approvalId: String(value.approval_id),
+    sessionId: value.session_id,
+    runId: String(value.run_id),
+    invocationId: value.invocation_id,
+    toolId: String(value.tool_name),
+    toolVersion: value.tool_version,
+    bindingDigest: String(value.binding_digest),
+    effect: parseJson(String(value.effect_json)),
+    status: value.status as SafeToolApproval["status"],
+    createdAt: String(value.created_at),
+    expiresAt: String(value.expires_at),
+    decidedAt: value.decided_at,
+    consumedAt: value.consumed_at,
   };
 }
 
@@ -796,6 +971,225 @@ export class CoreStore {
       )
       .all(runId, afterSeq)
       .map(mapEvent);
+  }
+
+  createSafeInvocation(input: CreateSafeInvocationInput): {
+    invocation: SafeToolInvocation;
+    approval: SafeToolApproval | null;
+  } {
+    const digest = (value: string, label: string) => {
+      if (!/^[a-f\d]{64}$/i.test(value)) throw new TypeError(`Invalid ${label}`);
+      return value;
+    };
+    return this.database.transaction(() => {
+      const needsApproval = input.sideEffect !== "none";
+      if (needsApproval && (!input.approvalId || !input.expiresAt)) {
+        throw new TypeError("Mutating invocation requires approval");
+      }
+      this.database
+        .prepare(
+          `INSERT INTO tool_invocations(
+             invocation_id, run_id, tool_name, input_json, output_json, status,
+             created_at, updated_at, session_id, tool_version, input_digest,
+             workspace_json, workspace_digest, binding_digest, effect_json,
+             side_effect, idempotent, error_json, started_at, completed_at
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`,
+        )
+        .run(
+          assertText(input.invocationId, "invocation id"),
+          assertText(input.runId, "run id"),
+          assertText(input.toolId, "tool id"),
+          canonicalJson(input.input),
+          needsApproval ? "waiting_approval" : "executing",
+          assertText(input.createdAt, "invocation creation time"),
+          input.createdAt,
+          assertText(input.sessionId, "session id"),
+          assertText(input.toolVersion, "tool version"),
+          digest(input.inputDigest, "input digest"),
+          canonicalJson(input.workspace),
+          digest(input.workspaceDigest, "workspace digest"),
+          digest(input.bindingDigest, "binding digest"),
+          canonicalJson(input.effect),
+          input.sideEffect,
+          input.idempotent ? 1 : 0,
+          needsApproval ? null : input.createdAt,
+        );
+
+      if (needsApproval) {
+        this.database
+          .prepare(
+            `INSERT INTO approvals(
+               approval_id, run_id, action, scope, status, payload_json,
+               created_at, decided_at, session_id, invocation_id, tool_name,
+               tool_version, binding_digest, effect_json, expires_at, consumed_at
+             ) VALUES (?, ?, ?, ?, 'pending', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          )
+          .run(
+            input.approvalId,
+            input.runId,
+            input.toolId,
+            input.sideEffect,
+            canonicalJson({ bindingDigest: input.bindingDigest }),
+            input.createdAt,
+            input.sessionId,
+            input.invocationId,
+            input.toolId,
+            input.toolVersion,
+            input.bindingDigest,
+            canonicalJson(input.effect),
+            input.expiresAt,
+          );
+      }
+
+      return {
+        invocation: this.getSafeInvocation(input.invocationId)!,
+        approval: input.approvalId ? this.getSafeApproval(input.approvalId) : null,
+      };
+    }).immediate();
+  }
+
+  getSafeInvocation(invocationId: string): SafeToolInvocation | null {
+    return mapSafeInvocation(
+      this.database
+        .prepare("SELECT * FROM tool_invocations WHERE invocation_id = ?")
+        .get(invocationId),
+    );
+  }
+
+  getSafeApproval(approvalId: string): SafeToolApproval | null {
+    return mapSafeApproval(
+      this.database
+        .prepare("SELECT * FROM approvals WHERE approval_id = ?")
+        .get(approvalId),
+    );
+  }
+
+  getSafeApprovalForInvocation(invocationId: string): SafeToolApproval | null {
+    return mapSafeApproval(
+      this.database
+        .prepare("SELECT * FROM approvals WHERE invocation_id = ?")
+        .get(invocationId),
+    );
+  }
+
+  decideSafeApproval(input: {
+    approvalId: string;
+    sessionId: string;
+    decision: "approved" | "denied";
+    now: string;
+  }): SafeToolApproval {
+    return this.database.transaction(() => {
+      const approval = this.getSafeApproval(input.approvalId);
+      if (!approval || approval.sessionId !== input.sessionId) {
+        throw new Error("approval_binding_mismatch");
+      }
+      if (approval.status !== "pending") throw new Error("approval_not_pending");
+      if (approval.expiresAt <= input.now) {
+        this.database
+          .prepare("UPDATE approvals SET status = 'expired', decided_at = ? WHERE approval_id = ?")
+          .run(input.now, input.approvalId);
+        this.database
+          .prepare("UPDATE tool_invocations SET status = 'expired', updated_at = ? WHERE invocation_id = ?")
+          .run(input.now, approval.invocationId);
+        return this.getSafeApproval(input.approvalId)!;
+      }
+      this.database
+        .prepare("UPDATE approvals SET status = ?, decided_at = ? WHERE approval_id = ?")
+        .run(input.decision, input.now, input.approvalId);
+      this.database
+        .prepare("UPDATE tool_invocations SET status = ?, updated_at = ? WHERE invocation_id = ?")
+        .run(input.decision, input.now, approval.invocationId);
+      return this.getSafeApproval(input.approvalId)!;
+    }).immediate();
+  }
+
+  claimSafeInvocation(input: ClaimSafeInvocationInput): SafeToolInvocation {
+    return this.database.transaction(() => {
+      const invocation = this.getSafeInvocation(input.invocationId);
+      const approval = this.getSafeApprovalForInvocation(input.invocationId);
+      const sameJson = (left: JsonValue, right: JsonValue) =>
+        canonicalJson(left) === canonicalJson(right);
+      if (
+        !invocation ||
+        !approval ||
+        invocation.sessionId !== input.sessionId ||
+        invocation.runId !== input.runId ||
+        invocation.toolId !== input.toolId ||
+        invocation.toolVersion !== input.toolVersion ||
+        invocation.inputDigest !== input.inputDigest ||
+        invocation.workspaceDigest !== input.workspaceDigest ||
+        invocation.bindingDigest !== input.bindingDigest ||
+        approval.bindingDigest !== input.bindingDigest ||
+        invocation.sideEffect !== input.sideEffect ||
+        invocation.idempotent !== input.idempotent ||
+        approval.sessionId !== input.sessionId ||
+        approval.runId !== input.runId ||
+        approval.toolId !== input.toolId ||
+        approval.toolVersion !== input.toolVersion ||
+        !sameJson(invocation.input, input.input) ||
+        !sameJson(invocation.workspace, input.workspace) ||
+        !sameJson(invocation.effect, input.effect) ||
+        !sameJson(approval.effect, input.effect)
+      ) {
+        throw new Error("approval_binding_mismatch");
+      }
+      if (approval.status !== "approved" || invocation.status !== "approved") {
+        throw new Error("approval_not_consumable");
+      }
+      if (approval.expiresAt <= input.now) {
+        this.database
+          .prepare("UPDATE approvals SET status = 'expired' WHERE approval_id = ?")
+          .run(approval.approvalId);
+        this.database
+          .prepare("UPDATE tool_invocations SET status = 'expired', updated_at = ? WHERE invocation_id = ?")
+          .run(input.now, invocation.invocationId);
+        throw new Error("approval_expired");
+      }
+      try {
+        this.database
+          .prepare(
+            "UPDATE tool_invocations SET status = 'executing', started_at = ?, updated_at = ? WHERE invocation_id = ? AND status = 'approved'",
+          )
+          .run(input.now, input.now, invocation.invocationId);
+      } catch (error) {
+        if ((error as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE") {
+          throw new Error("side_effect_already_active");
+        }
+        throw error;
+      }
+      const consumed = this.database
+        .prepare(
+          "UPDATE approvals SET status = 'consumed', consumed_at = ? WHERE approval_id = ? AND status = 'approved'",
+        )
+        .run(input.now, approval.approvalId);
+      if (consumed.changes !== 1) throw new Error("approval_not_consumable");
+      return this.getSafeInvocation(invocation.invocationId)!;
+    }).immediate();
+  }
+
+  finishSafeInvocation(input: {
+    invocationId: string;
+    status: "completed" | "failed" | "unknown";
+    output?: JsonValue;
+    error?: JsonValue;
+    now: string;
+  }): SafeToolInvocation {
+    const changed = this.database
+      .prepare(
+        `UPDATE tool_invocations
+         SET status = ?, output_json = ?, error_json = ?, completed_at = ?, updated_at = ?
+         WHERE invocation_id = ? AND status = 'executing'`,
+      )
+      .run(
+        input.status,
+        input.output === undefined ? null : canonicalJson(input.output),
+        input.error === undefined ? null : canonicalJson(input.error),
+        input.now,
+        input.now,
+        input.invocationId,
+      );
+    if (changed.changes !== 1) throw new Error("invocation_not_executing");
+    return this.getSafeInvocation(input.invocationId)!;
   }
 }
 

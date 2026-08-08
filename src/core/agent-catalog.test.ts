@@ -24,18 +24,12 @@ default_model: gemini
 models:
   gemini: { fallback: [codex-openai] }
   codex-openai: { fallback: [] }
-tools:
-  code.context: { risk: read }
-  terminal.read: { risk: read }
-  terminal.run: { risk: system }
-  file.patch: { risk: system }
 agents:
   Hermes:
     model: gemini
     workspace_mode: optional_existing
     mutation_mode: controlled
     tools: [code.context, terminal.read, terminal.run, file.patch]
-    max_risk: system
     memory_policy: manual
     budget_usd: 2
     timeout_ms: 120000
@@ -44,7 +38,6 @@ agents:
     workspace_mode: optional_existing
     mutation_mode: none
     tools: [code.context]
-    max_risk: read
     memory_policy: off
     budget_usd: 1
     timeout_ms: 1
@@ -53,7 +46,6 @@ agents:
     workspace_mode: existing_repo
     mutation_mode: controlled
     tools: [code.context]
-    max_risk: read
     memory_policy: manual
     budget_usd: 1
     timeout_ms: 1
@@ -62,7 +54,6 @@ agents:
     workspace_mode: new_project
     mutation_mode: controlled
     tools: [code.context]
-    max_risk: read
     memory_policy: consent
     budget_usd: 1
     timeout_ms: 1
@@ -94,7 +85,6 @@ describe("agent catalog", () => {
     ]);
     expect(getAgent(catalog, "Planner")).toMatchObject({
       mutationMode: "none",
-      maxRisk: "read",
       tools: ["code.context", "terminal.read"],
     });
   });
@@ -111,15 +101,13 @@ describe("agent catalog", () => {
     ],
     ["zero budget", validCatalog.replace("budget_usd: 2", "budget_usd: 0")],
     ["zero timeout", validCatalog.replace("timeout_ms: 120000", "timeout_ms: 0")],
-    ["tool risk above agent maximum", validCatalog.replace("max_risk: system", "max_risk: read")],
   ])("rejects %s", (_name, raw) => {
     expect(() => loadAgentCatalogFromYaml(raw)).toThrow();
   });
 
   it("rejects tools that can mutate from a non-mutating agent", () => {
     const raw = validCatalog
-      .replace("mutation_mode: controlled", "mutation_mode: none")
-      .replace("max_risk: system", "max_risk: read");
+      .replace("mutation_mode: controlled", "mutation_mode: none");
 
     expect(() => loadAgentCatalogFromYaml(raw)).toThrow();
   });

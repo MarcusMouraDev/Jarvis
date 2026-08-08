@@ -9,23 +9,11 @@ models:
     fallback: []
   local:
     fallback: []
-tools:
-  code.context:
-    risk: read
-  terminal.read:
-    risk: read
-  terminal.run:
-    risk: system
-  file.patch:
-    risk: system
-  project.create:
-    risk: system
 agents:
   Hermes:
     workspace_mode: optional_existing
     mutation_mode: controlled
     tools: [code.context, terminal.read, terminal.run, file.patch]
-    max_risk: system
     memory_policy: manual
     budget_usd: 2
     timeout_ms: 120000
@@ -33,7 +21,6 @@ agents:
     workspace_mode: optional_existing
     mutation_mode: none
     tools: [code.context, terminal.read]
-    max_risk: read
     memory_policy: off
     budget_usd: 1.5
     timeout_ms: 90000
@@ -41,7 +28,6 @@ agents:
     workspace_mode: existing_repo
     mutation_mode: controlled
     tools: [code.context, terminal.read, terminal.run, file.patch]
-    max_risk: system
     memory_policy: manual
     budget_usd: 3
     timeout_ms: 180000
@@ -49,7 +35,6 @@ agents:
     workspace_mode: new_project
     mutation_mode: controlled
     tools: [terminal.read, terminal.run, file.patch, project.create]
-    max_risk: system
     memory_policy: consent
     budget_usd: 5
     timeout_ms: 180000

@@ -3,10 +3,10 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+import { getSafeToolManifest } from "./safe-tool-manifests";
 import type { ResolvedWorkspace, WorkspaceRequest } from "./workspace-policy";
 
 const agentIds = ["Hermes", "Planner", "Developer", "Builder"] as const;
-const riskSchema = z.enum(["read", "network", "write", "system"]);
 const workspaceModeSchema = z.enum([
   "optional_existing",
   "existing_repo",
@@ -16,14 +16,12 @@ const mutationModeSchema = z.enum(["none", "controlled"]);
 const memoryPolicySchema = z.enum(["off", "manual", "consent"]);
 
 const modelSchema = z.object({ fallback: z.array(z.string()).default([]) }).strict();
-const toolSchema = z.object({ risk: riskSchema }).strict();
 const agentSchema = z
   .object({
     model: z.string().optional(),
     workspace_mode: workspaceModeSchema,
     mutation_mode: mutationModeSchema,
     tools: z.array(z.string()).min(1),
-    max_risk: riskSchema,
     memory_policy: memoryPolicySchema,
     budget_usd: z.number().finite().positive(),
     timeout_ms: z.number().int().positive(),
@@ -35,12 +33,10 @@ const yamlSchema = z
     version: z.number().int().positive(),
     default_model: z.string(),
     models: z.record(z.string(), modelSchema),
-    tools: z.record(z.string(), toolSchema),
     agents: z.record(z.string(), agentSchema),
   })
   .strict();
 
-export type AgentRisk = z.infer<typeof riskSchema>;
 export type AgentWorkspaceMode = z.infer<typeof workspaceModeSchema>;
 export type AgentMutationMode = z.infer<typeof mutationModeSchema>;
 export type AgentMemoryPolicy = z.infer<typeof memoryPolicySchema>;
@@ -51,7 +47,6 @@ export interface AgentDefinition {
   workspaceMode: AgentWorkspaceMode;
   mutationMode: AgentMutationMode;
   tools: string[];
-  maxRisk: AgentRisk;
   memoryPolicy: AgentMemoryPolicy;
   budgetUsd: number;
   timeoutMs: number;
@@ -61,7 +56,6 @@ export interface AgentCatalog {
   version: number;
   defaultModel: string;
   models: Record<string, { fallback: string[] }>;
-  tools: Record<string, { risk: AgentRisk }>;
   agents: Record<(typeof agentIds)[number], AgentDefinition>;
 }
 
@@ -69,13 +63,6 @@ export interface GitRepositoryValidationOptions {
   /** Test seam for the read-only Git probe. */
   execFile?: typeof execFileSync;
 }
-
-const riskRank: Record<AgentRisk, number> = {
-  read: 0,
-  network: 1,
-  write: 2,
-  system: 3,
-};
 
 function fail(message: string): never {
   throw new Error(`Invalid agent catalog: ${message}`);
@@ -108,33 +95,24 @@ function assertAgentCompatibility(
   agent: z.infer<typeof agentSchema>,
   id: string,
   models: Record<string, { fallback: string[] }>,
-  tools: Record<string, { risk: AgentRisk }>,
   defaultModel: string,
 ) {
   const model = agent.model ?? defaultModel;
   if (!ownValue(models, model)) fail(`${id} references unknown model ${model}`);
 
   for (const toolId of agent.tools) {
-    const tool = ownValue(tools, toolId);
+    const tool = getSafeToolManifest(toolId);
     if (!tool) fail(`${id} references unknown tool ${toolId}`);
-    if (riskRank[tool.risk] > riskRank[agent.max_risk]) {
-      fail(`${id} allows tool risk above max risk`);
-    }
-    if (agent.mutation_mode === "none" && tool.risk !== "read") {
+    if (agent.mutation_mode === "none" && tool.sideEffect !== "none") {
       fail(`${id} non-mutating mode allows ${toolId}`);
     }
-  }
-  if (agent.mutation_mode === "none" && agent.max_risk !== "read") {
-    fail(`${id} non-mutating mode has elevated max risk`);
   }
 }
 
 /** Pure validation boundary for the safe-core manifest. */
 export function loadAgentCatalogFromYaml(raw: string): AgentCatalog {
   const parsed = yamlSchema.parse(parseYaml(raw));
-  if (Object.keys(parsed.models).length === 0 || Object.keys(parsed.tools).length === 0) {
-    fail("models and tools must not be empty");
-  }
+  if (Object.keys(parsed.models).length === 0) fail("models must not be empty");
   if (!ownValue(parsed.models, parsed.default_model)) fail("unknown default model");
   assertNoFallbackCycles(parsed.models);
 
@@ -147,21 +125,20 @@ export function loadAgentCatalogFromYaml(raw: string): AgentCatalog {
   for (const id of agentIds) {
     const agent = ownValue(parsed.agents, id);
     if (!agent) fail(`missing agent ${id}`);
-    assertAgentCompatibility(agent, id, parsed.models, parsed.tools, parsed.default_model);
+    assertAgentCompatibility(agent, id, parsed.models, parsed.default_model);
     agents[id] = {
       id,
       model: agent.model ?? parsed.default_model,
       workspaceMode: agent.workspace_mode,
       mutationMode: agent.mutation_mode,
       tools: [...agent.tools],
-      maxRisk: agent.max_risk,
       memoryPolicy: agent.memory_policy,
       budgetUsd: agent.budget_usd,
       timeoutMs: agent.timeout_ms,
     };
   }
 
-  return { version: parsed.version, defaultModel: parsed.default_model, models: parsed.models, tools: parsed.tools, agents };
+  return { version: parsed.version, defaultModel: parsed.default_model, models: parsed.models, agents };
 }
 
 export function loadAgentCatalogFromDisk(): AgentCatalog {

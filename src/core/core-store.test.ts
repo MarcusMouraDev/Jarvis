@@ -65,7 +65,7 @@ describe("core-store", () => {
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all()
         .map((row) => (row as { version: number }).version),
-    ).toEqual([1, 2]);
+    ).toEqual([1, 2, 3]);
     expect(
       database
         .prepare("PRAGMA table_info(sessions)")

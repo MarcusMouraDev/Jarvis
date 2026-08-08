@@ -15,7 +15,13 @@ const workspaceModeSchema = z.enum([
 const mutationModeSchema = z.enum(["none", "controlled"]);
 const memoryPolicySchema = z.enum(["off", "manual", "consent"]);
 
-const modelSchema = z.object({ fallback: z.array(z.string()).default([]) }).strict();
+const modelSchema = z
+  .object({
+    provider: z.string().min(1),
+    costs_extra: z.boolean(),
+    fallback: z.array(z.string()).default([]),
+  })
+  .strict();
 const agentSchema = z
   .object({
     model: z.string().optional(),
@@ -23,7 +29,7 @@ const agentSchema = z
     mutation_mode: mutationModeSchema,
     tools: z.array(z.string()).min(1),
     memory_policy: memoryPolicySchema,
-    budget_usd: z.number().finite().positive(),
+    budget_usd: z.number().finite().nonnegative(),
     timeout_ms: z.number().int().positive(),
   })
   .strict();
@@ -55,7 +61,10 @@ export interface AgentDefinition {
 export interface AgentCatalog {
   version: number;
   defaultModel: string;
-  models: Record<string, { fallback: string[] }>;
+  models: Record<
+    string,
+    { provider: string; costsExtra: boolean; fallback: string[] }
+  >;
   agents: Record<(typeof agentIds)[number], AgentDefinition>;
 }
 
@@ -121,6 +130,16 @@ export function loadAgentCatalogFromYaml(raw: string): AgentCatalog {
     fail("must define exactly Hermes, Planner, Developer and Builder");
   }
 
+  const models = Object.fromEntries(
+    Object.entries(parsed.models).map(([id, model]) => [
+      id,
+      {
+        provider: model.provider,
+        costsExtra: model.costs_extra,
+        fallback: [...model.fallback],
+      },
+    ]),
+  );
   const agents = {} as AgentCatalog["agents"];
   for (const id of agentIds) {
     const agent = ownValue(parsed.agents, id);
@@ -138,7 +157,7 @@ export function loadAgentCatalogFromYaml(raw: string): AgentCatalog {
     };
   }
 
-  return { version: parsed.version, defaultModel: parsed.default_model, models: parsed.models, agents };
+  return { version: parsed.version, defaultModel: parsed.default_model, models, agents };
 }
 
 export function loadAgentCatalogFromDisk(): AgentCatalog {

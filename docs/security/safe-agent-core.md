@@ -20,3 +20,5 @@ Uma aprovação expira em dez minutos e é ligada à sessão, execução, invoca
 ## Privacidade
 
 Conteúdo confidencial ou secreto segue para execução local. Qualquer envio a provedor externo exige uma aprovação vinculada ao conteúdo, contexto, provedor e modelo efetivos. Logs, eventos e documentação devem usar somente alvos sanitizados e prévias seguras.
+
+O catálogo do núcleo seguro inicia com `local`, orçamento de nuvem zero e fallbacks vazios. Gemini e OpenAI são classificados como providers com custo extra e não podem ser selecionados sem habilitação explícita. A indisponibilidade local falha de forma fechada; nunca aciona fallback automático para nuvem.

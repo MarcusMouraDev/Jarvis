@@ -1,13 +1,21 @@
 version: 1
-default_model: gemini
+default_model: local
 models:
   gemini:
+    provider: google
+    costs_extra: true
     fallback: []
   codex-openai:
+    provider: openai
+    costs_extra: true
     fallback: []
   cursor-text:
+    provider: cursor
+    costs_extra: false
     fallback: []
   local:
+    provider: local
+    costs_extra: false
     fallback: []
 agents:
   Hermes:
@@ -15,26 +23,26 @@ agents:
     mutation_mode: controlled
     tools: [code.context, terminal.read, terminal.run, file.patch]
     memory_policy: manual
-    budget_usd: 2
+    budget_usd: 0
     timeout_ms: 120000
   Planner:
     workspace_mode: optional_existing
     mutation_mode: none
     tools: [code.context, terminal.read]
     memory_policy: off
-    budget_usd: 1.5
+    budget_usd: 0
     timeout_ms: 90000
   Developer:
     workspace_mode: existing_repo
     mutation_mode: controlled
     tools: [code.context, terminal.read, terminal.run, file.patch]
     memory_policy: manual
-    budget_usd: 3
+    budget_usd: 0
     timeout_ms: 180000
   Builder:
     workspace_mode: new_project
     mutation_mode: controlled
     tools: [terminal.read, terminal.run, file.patch, project.create]
     memory_policy: consent
-    budget_usd: 5
+    budget_usd: 0
     timeout_ms: 180000

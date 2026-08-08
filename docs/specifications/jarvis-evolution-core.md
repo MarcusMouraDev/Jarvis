@@ -32,6 +32,8 @@ Rotas seguras aceitam somente loopback, validam Host/Origin e CSRF e usam cookie
 
 Ferramentas possuem manifests Zod versionados e descrevem entrada, saída, escopo, risco, efeito, idempotência, timeout e prévia. Aprovações vinculam o efeito exato, expiram em dez minutos e são consumidas uma vez. Provedores normalizam eventos e respeitam privacidade; fallback é visível, limitado e não reaplica efeitos incertos. O orquestrador limita passos, tempo, custo e mutações simultâneas.
 
+O núcleo seguro usa `local` como modelo padrão e orçamento de nuvem zero. Providers que podem gerar cobrança permanecem desativados até opt-in explícito; não existe fallback automático de local para nuvem. Conteúdo confidencial ou secreto só pode sair do dispositivo quando uma aprovação corresponder ao digest exato do conteúdo e do destino efetivo. Essa decisão substitui a preferência anterior por Gemini como padrão sem alterar o fluxo legado V23.
+
 ### Interface
 
 A interface mostra Hermes como padrão, agente imutável durante a execução, provedor/modelo efetivos, estado operacional e cartão de aprovação sanitizado. Uma recarga reconstrói o estado a partir do armazenamento.

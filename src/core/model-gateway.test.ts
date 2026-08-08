@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildRoutingCandidates,
   isSmartRoutingEnabled,
+  selectSafeModelAlias,
   selectModelAlias,
   wouldRouteConfidentialToCloud,
 } from "./model-gateway";
+import { loadAgentCatalogFromYaml } from "./agent-catalog";
 
 const originalSmartRouting = process.env.JARVIS_SMART_ROUTING;
 
@@ -17,6 +19,102 @@ afterEach(() => {
 });
 
 describe("model-gateway", () => {
+  const safeCatalog = loadAgentCatalogFromYaml(`
+version: 1
+default_model: local
+models:
+  local: { provider: local, costs_extra: false, fallback: [gemini] }
+  gemini: { provider: google, costs_extra: true, fallback: [] }
+agents:
+  Hermes:
+    workspace_mode: optional_existing
+    mutation_mode: controlled
+    tools: [code.context]
+    memory_policy: manual
+    budget_usd: 0
+    timeout_ms: 1000
+  Planner:
+    workspace_mode: optional_existing
+    mutation_mode: none
+    tools: [code.context]
+    memory_policy: off
+    budget_usd: 0
+    timeout_ms: 1000
+  Developer:
+    workspace_mode: existing_repo
+    mutation_mode: controlled
+    tools: [code.context]
+    memory_policy: manual
+    budget_usd: 0
+    timeout_ms: 1000
+  Builder:
+    workspace_mode: new_project
+    mutation_mode: controlled
+    tools: [code.context]
+    memory_policy: consent
+    budget_usd: 0
+    timeout_ms: 1000
+`);
+
+  it("defaults the safe core to local without cloud fallback", () => {
+    expect(
+      selectSafeModelAlias({
+        catalog: safeCatalog,
+        privacyClass: "internal",
+        availableAliases: ["local", "gemini"],
+      }),
+    ).toMatchObject({ alias: "local", provider: "local", costsExtra: false });
+  });
+
+  it("blocks paid providers until explicitly enabled", () => {
+    expect(() =>
+      selectSafeModelAlias({
+        catalog: safeCatalog,
+        requestedAlias: "gemini",
+        privacyClass: "internal",
+        availableAliases: ["gemini"],
+      }),
+    ).toThrow("paid_provider_disabled");
+  });
+
+  it("requires exact cloud egress approval for sensitive content", () => {
+    expect(() =>
+      selectSafeModelAlias({
+        catalog: safeCatalog,
+        requestedAlias: "gemini",
+        privacyClass: "confidential",
+        availableAliases: ["gemini"],
+        allowPaidProvider: true,
+        contentDigest: "a".repeat(64),
+      }),
+    ).toThrow("cloud_egress_approval_required");
+  });
+
+  it("accepts sensitive cloud egress only when approval matches the content digest", () => {
+    expect(
+      selectSafeModelAlias({
+        catalog: safeCatalog,
+        requestedAlias: "gemini",
+        privacyClass: "secret",
+        availableAliases: ["gemini"],
+        allowPaidProvider: true,
+        contentDigest: "a".repeat(64),
+        approvedCloudEgressDigest: "a".repeat(64),
+      }),
+    ).toMatchObject({ alias: "gemini", provider: "google", costsExtra: true });
+  });
+
+  it("never falls back from a missing local model to cloud", () => {
+    expect(() =>
+      selectSafeModelAlias({
+        catalog: safeCatalog,
+        privacyClass: "internal",
+        availableAliases: ["gemini"],
+        allowPaidProvider: true,
+      }),
+    ).toThrow("local_model_unavailable");
+  });
+
   it("mantém alias solicitado com smart routing desligado", () => {
     delete process.env.JARVIS_SMART_ROUTING;
     const selection = selectModelAlias({

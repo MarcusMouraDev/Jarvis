@@ -22,8 +22,8 @@ const validCatalog = `
 version: 1
 default_model: gemini
 models:
-  gemini: { fallback: [codex-openai] }
-  codex-openai: { fallback: [] }
+  gemini: { provider: google, costs_extra: true, fallback: [codex-openai] }
+  codex-openai: { provider: openai, costs_extra: true, fallback: [] }
 agents:
   Hermes:
     model: gemini
@@ -76,7 +76,12 @@ describe("agent catalog", () => {
 
     const catalog = loadAgentCatalogFromYaml(raw);
 
-    expect(catalog.defaultModel).toBe("gemini");
+    expect(catalog.defaultModel).toBe("local");
+    expect(catalog.models.local).toMatchObject({
+      provider: "local",
+      costsExtra: false,
+      fallback: [],
+    });
     expect(Object.keys(catalog.agents)).toEqual([
       "Hermes",
       "Planner",
@@ -86,6 +91,7 @@ describe("agent catalog", () => {
     expect(getAgent(catalog, "Planner")).toMatchObject({
       mutationMode: "none",
       tools: ["code.context", "terminal.read"],
+      budgetUsd: 0,
     });
   });
 
@@ -95,11 +101,11 @@ describe("agent catalog", () => {
     [
       "fallback cycle",
       validCatalog.replace(
-        "codex-openai: { fallback: [] }",
-        "codex-openai: { fallback: [gemini] }",
+        "codex-openai: { provider: openai, costs_extra: true, fallback: [] }",
+        "codex-openai: { provider: openai, costs_extra: true, fallback: [gemini] }",
       ),
     ],
-    ["zero budget", validCatalog.replace("budget_usd: 2", "budget_usd: 0")],
+    ["negative budget", validCatalog.replace("budget_usd: 2", "budget_usd: -1")],
     ["zero timeout", validCatalog.replace("timeout_ms: 120000", "timeout_ms: 0")],
   ])("rejects %s", (_name, raw) => {
     expect(() => loadAgentCatalogFromYaml(raw)).toThrow();

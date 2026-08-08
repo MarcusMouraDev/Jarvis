@@ -8,12 +8,12 @@ import {
   listModelAliases,
 } from "@/core/config";
 import { BudgetTracker, requiresConfirmation } from "@/core/policy";
-import { collectStream, routeTextRequest } from "@/core/router";
-import { recordTelemetry } from "@/core/telemetry";
 import type { AgentState, PrivacyClass } from "@/core/types";
+import { streamChat } from "@/lib/chat-client";
 import { AgentStateMachine } from "@/state/agent-state";
 import { useAudioLevel } from "@/audio/use-audio-level";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
+import { useWebGLAvailable } from "@/hooks/use-webgl";
 import { PresenceField } from "@/presence/PresenceField";
 import { Composer } from "./Composer";
 import { ConfirmOverlay } from "./ConfirmOverlay";
@@ -22,18 +22,6 @@ import { HistoryPanel, type ChatMessage } from "./HistoryPanel";
 import { InstrumentBar } from "./InstrumentBar";
 import { LastExchange } from "./LastExchange";
 import { StateLabel } from "./StateLabel";
-
-function detectWebGL(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const canvas = document.createElement("canvas");
-    return !!(
-      canvas.getContext("webgl") || canvas.getContext("experimental-webgl")
-    );
-  } catch {
-    return false;
-  }
-}
 
 const BUDGET_USD = 2;
 
@@ -64,18 +52,15 @@ export function JarvisShell() {
     jarvisConfig.policies.voiceRequiresFirstUseNotice,
   );
   const [firstUseProvider, setFirstUseProvider] = useState<string | null>(null);
-  const [webglAvailable, setWebglAvailable] = useState(false);
   const [forceFallback, setForceFallback] = useState(false);
+  const [activeSkills, setActiveSkills] = useState<string[]>([]);
 
   const reducedMotion = useReducedMotion();
   const documentHidden = useDocumentHidden();
+  const webglAvailable = useWebGLAvailable();
   const { levelRef, micPermission } = useAudioLevel(state, audioRef, {
     enabled: !reducedMotion,
   });
-
-  useEffect(() => {
-    setWebglAvailable(detectWebGL());
-  }, []);
 
   const go = useCallback(
     (to: AgentState) => {
@@ -269,6 +254,72 @@ export function JarvisShell() {
       return true;
     }
 
+    if (cmd === "/skill" || cmd === "/skills") {
+      const sub = parts[1]?.toLowerCase();
+      if (!sub || sub === "list") {
+        const res = await fetch("/api/skills");
+        const data = (await res.json()) as {
+          count: number;
+          skills: Array<{ name: string; source: string; description: string }>;
+        };
+        const preview = data.skills
+          .slice(0, 30)
+          .map((s) => `• ${s.name} (${s.source})`)
+          .join("\n");
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Skills disponíveis: ${data.count}\n${preview}${
+            data.count > 30 ? "\n…" : ""
+          }\nAtivas: ${activeSkills.length ? activeSkills.join(", ") : "(auto)"}`,
+        });
+        return true;
+      }
+      if (sub === "use" && parts[2]) {
+        const name = parts[2];
+        setActiveSkills((prev) =>
+          prev.includes(name) ? prev : [...prev, name],
+        );
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `Skill ativada: ${name}`,
+        });
+        return true;
+      }
+      if (sub === "clear") {
+        setActiveSkills([]);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Skills manuais limpas — volta a seleção automática.",
+        });
+        return true;
+      }
+      if (sub === "show" && parts[2]) {
+        const res = await fetch(`/api/skills/${encodeURIComponent(parts[2])}`);
+        if (!res.ok) {
+          pushMessage({
+            id: crypto.randomUUID(),
+            role: "system",
+            text: `Skill não encontrada: ${parts[2]}`,
+          });
+          return true;
+        }
+        const skill = (await res.json()) as {
+          name: string;
+          description: string;
+          body: string;
+        };
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: `# ${skill.name}\n${skill.description}\n\n${skill.body.slice(0, 4000)}`,
+        });
+        return true;
+      }
+    }
+
     return false;
   };
 
@@ -313,51 +364,110 @@ export function JarvisShell() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const started = performance.now();
+    const assistantId = crypto.randomUUID();
+    let full = "";
+    let sawDone = false;
+
     try {
-      const { request, route } = await routeTextRequest(modelAlias, text, {
-        privacyClass,
-        maxCostUsd: BUDGET_USD,
-        forceFallback,
-      });
-      setForceFallback(false);
-
-      if (controller.signal.aborted) throw new Error("aborted");
-
-      const { chunks, response } = await collectStream(
-        route.adapter.stream(request),
+      await streamChat(
+        {
+          alias: modelAlias,
+          prompt: text,
+          privacyClass,
+          skills: activeSkills.length ? activeSkills : undefined,
+          autoSelectSkills: activeSkills.length === 0,
+          forceFallback,
+        },
+        {
+          onSkills: (skills) => {
+            if (!skills.length) return;
+            pushMessage({
+              id: crypto.randomUUID(),
+              role: "system",
+              text: `Skills aplicadas: ${skills.map((s) => s.name).join(", ")}`,
+            });
+          },
+          onRoute: (route) => {
+            setFallback({
+              visible: route.fallbackUsed,
+              requestedAlias: route.requestedAlias,
+              effectiveAlias: route.effectiveAlias,
+              reason: route.fallbackReason ?? "",
+            });
+          },
+          onChunk: (chunk) => {
+            full += chunk;
+            setMessages((prev) => {
+              const exists = prev.some((m) => m.id === assistantId);
+              if (!exists) {
+                return [
+                  ...prev,
+                  {
+                    id: assistantId,
+                    role: "assistant" as const,
+                    text: full,
+                    meta: "streaming…",
+                  },
+                ];
+              }
+              return prev.map((m) =>
+                m.id === assistantId ? { ...m, text: full } : m,
+              );
+            });
+          },
+          onDone: (response) => {
+            sawDone = true;
+            setForceFallback(false);
+            full = response.text || full;
+            try {
+              budget.charge(response.usage.estimatedCostUsd);
+              setSpent(budget.totalSpent);
+            } catch {
+              go("asking");
+              pushMessage({
+                id: crypto.randomUUID(),
+                role: "system",
+                text: "Orçamento da sessão excedido.",
+              });
+              return;
+            }
+            setFallback({
+              visible: response.fallbackUsed,
+              requestedAlias: modelAlias,
+              effectiveAlias: response.model,
+              reason: response.fallbackReason ?? "",
+            });
+            setMessages((prev) => {
+              const exists = prev.some((m) => m.id === assistantId);
+              const meta = `${response.model} · ${response.provider} · ${response.usage.totalTokens} tokens`;
+              if (!exists) {
+                return [
+                  ...prev,
+                  {
+                    id: assistantId,
+                    role: "assistant",
+                    text: full,
+                    meta,
+                  },
+                ];
+              }
+              return prev.map((m) =>
+                m.id === assistantId ? { ...m, text: full, meta } : m,
+              );
+            });
+          },
+          onError: (error) => {
+            throw new Error(error);
+          },
+        },
+        controller.signal,
       );
-      if (controller.signal.aborted) throw new Error("aborted");
 
-      budget.charge(response.usage.estimatedCostUsd);
-      setSpent(budget.totalSpent);
+      if (!sawDone && !controller.signal.aborted) {
+        throw new Error("stream_incomplete");
+      }
 
-      setFallback({
-        visible: response.fallbackUsed || route.fallbackUsed,
-        requestedAlias: route.requestedAlias,
-        effectiveAlias: response.model,
-        reason: response.fallbackReason ?? route.fallbackReason ?? "",
-      });
-
-      const full = chunks.join("") || response.text;
-      pushMessage({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        text: full,
-        meta: `${response.model} · ${getProviderForAlias(response.model)} · ${response.usage.totalTokens} tokens`,
-      });
-
-      recordTelemetry({
-        requestId: response.requestId,
-        alias: response.model,
-        effectiveProvider: response.provider,
-        latencyMs: performance.now() - started,
-        status: response.fallbackUsed ? "fallback" : "ok",
-        fallbackReason: response.fallbackReason,
-        usage: response.usage,
-      });
-
-      if (voiceOn) {
+      if (voiceOn && full) {
         await speakText(full, controller.signal);
       } else {
         go("idle");
@@ -365,21 +475,12 @@ export function JarvisShell() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "erro";
       if (message === "aborted") return;
-      if (message === "budget_exceeded") {
-        go("asking");
-        pushMessage({
-          id: crypto.randomUUID(),
-          role: "system",
-          text: "Orçamento da sessão excedido.",
-        });
-      } else {
-        go("failure");
-        pushMessage({
-          id: crypto.randomUUID(),
-          role: "system",
-          text: `Falha: ${message}`,
-        });
-      }
+      go("failure");
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: `Falha: ${message}`,
+      });
     } finally {
       setBusy(false);
       abortRef.current = null;

@@ -2,8 +2,15 @@ import type { TextRequest, TextResponse, VoiceRequest, VoiceResponse } from "@/c
 
 export type MockFailure = "none" | "timeout" | "rate_limit" | "unavailable";
 
+export interface StreamOptions {
+  systemInstruction?: string;
+}
+
 export interface TextAdapter {
-  stream(request: TextRequest): AsyncGenerator<string, TextResponse>;
+  stream(
+    request: TextRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<string, TextResponse>;
 }
 
 export interface VoiceAdapter {

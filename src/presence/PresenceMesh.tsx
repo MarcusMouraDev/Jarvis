@@ -44,7 +44,9 @@ export function PresenceMesh({
       uColorA: { value: new THREE.Vector3(...hexToRgb(initial.colorA)) },
       uColorB: { value: new THREE.Vector3(...hexToRgb(initial.colorB)) },
     }),
-    [initial.coherence, initial.turbulence],
+    // Idle baseline uniforms are stable for the mesh lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- create once
+    [],
   );
 
   useFrame((_, delta) => {

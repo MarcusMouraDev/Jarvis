@@ -17,11 +17,16 @@ export function useAudioLevel(
   const output = useRef<OutputAnalyzer | null>(null);
   const [micPermission, setMicPermission] = useState<MicPermission>("unknown");
   const hiddenRef = useRef(false);
+  const listening = enabled && state === "listening";
 
   useEffect(() => {
     input.current = new InputAnalyzer();
     output.current = new OutputAnalyzer();
-    void queryMicPermission().then(setMicPermission);
+
+    let cancelled = false;
+    void queryMicPermission().then((perm) => {
+      if (!cancelled) setMicPermission(perm);
+    });
 
     const onVis = () => {
       hiddenRef.current = document.hidden;
@@ -30,6 +35,7 @@ export function useAudioLevel(
     document.addEventListener("visibilitychange", onVis);
 
     return () => {
+      cancelled = true;
       document.removeEventListener("visibilitychange", onVis);
       input.current?.stop();
       output.current?.detach();
@@ -37,15 +43,15 @@ export function useAudioLevel(
   }, []);
 
   useEffect(() => {
-    if (!enabled || state !== "listening") {
+    if (!listening) {
       input.current?.stop();
       input.current = new InputAnalyzer();
       return;
     }
 
     let cancelled = false;
-    setMicPermission("prompting");
     void (async () => {
+      setMicPermission((prev) => (prev === "granted" ? prev : "prompting"));
       const perm = await requestMicPermission();
       if (cancelled) return;
       setMicPermission(perm);
@@ -56,15 +62,17 @@ export function useAudioLevel(
       try {
         await input.current?.start();
       } catch {
-        setMicPermission("denied");
-        levelRef.current = 0;
+        if (!cancelled) {
+          setMicPermission("denied");
+          levelRef.current = 0;
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [state, enabled]);
+  }, [listening]);
 
   useEffect(() => {
     const audio = audioRef.current;

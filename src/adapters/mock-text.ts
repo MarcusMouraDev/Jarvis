@@ -15,7 +15,11 @@ export class MockTextAdapter implements TextAdapter {
     private readonly fallbackReason?: string,
   ) {}
 
-  async *stream(request: TextRequest): AsyncGenerator<string, TextResponse> {
+  async *stream(
+    request: TextRequest,
+    options?: { systemInstruction?: string },
+  ): AsyncGenerator<string, TextResponse> {
+    void options;
     if (this.failure === "timeout") {
       await delay(80);
       throw new Error("timeout");

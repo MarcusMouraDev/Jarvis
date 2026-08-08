@@ -12,11 +12,12 @@ describe("reduced-motion contract", () => {
     expect(src).toContain("PresenceFallback");
   });
 
-  it("useReducedMotion defaults to true before client hydration", () => {
+  it("useReducedMotion server snapshot defaults to reduced", () => {
     const src = readFileSync(
       resolve(__dirname, "./use-reduced-motion.ts"),
       "utf8",
     );
-    expect(src).toMatch(/useState\(\s*true\s*\)/);
+    expect(src).toContain("getReducedMotionServerSnapshot");
+    expect(src).toMatch(/function getReducedMotionServerSnapshot\(\) \{\s*return true;/);
   });
 });

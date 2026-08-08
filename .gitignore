@@ -14,6 +14,10 @@ dist/
 .env*.local
 *.pem
 
+# skills espelhadas localmente (geradas por npm run skills:sync)
+.cursor/skills/*
+!.cursor/skills/README.md
+
 # debug / logs
 npm-debug.log*
 yarn-debug.log*

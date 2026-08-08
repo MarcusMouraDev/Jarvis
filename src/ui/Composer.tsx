@@ -9,7 +9,11 @@ interface ComposerProps {
 
 const HINTS = [
   "/select model gemini",
+  "/select model codex",
   "/select model deepseek-flash",
+  "/skills list",
+  "/skill use sdk",
+  "/skill clear",
   "/voice on",
   "/voice off",
   "/voice status",

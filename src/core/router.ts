@@ -1,7 +1,7 @@
 import { jarvisConfig, getModelConfig } from "./config";
 import type { PrivacyClass, TextRequest, TextResponse } from "./types";
 import type { MockFailure, TextAdapter } from "@/adapters/base";
-import { MockTextAdapter } from "@/adapters/mock-text";
+import { createTextAdapter } from "@/adapters/factory";
 
 export interface RouteResult {
   adapter: TextAdapter;
@@ -9,6 +9,7 @@ export interface RouteResult {
   requestedAlias: string;
   fallbackUsed: boolean;
   fallbackReason?: string;
+  mode: "live" | "mock";
 }
 
 export async function routeTextRequest(
@@ -19,6 +20,7 @@ export async function routeTextRequest(
     forceFallback?: boolean;
     privacyClass?: PrivacyClass;
     maxCostUsd?: number;
+    forceMock?: boolean;
   },
 ): Promise<{ request: TextRequest; route: RouteResult }> {
   const config = getModelConfig(requestedAlias);
@@ -41,11 +43,8 @@ export async function routeTextRequest(
   if (shouldFallback && config.fallback.length > 0 && maxAttempts >= 1) {
     effectiveAlias = config.fallback[0];
     fallbackUsed = true;
-    fallbackReason =
-      failure === "none" ? "rate_limit" : failure;
+    fallbackReason = failure === "none" ? "rate_limit" : failure;
     failure = "none";
-  } else if (shouldFallback && config.fallback.length === 0) {
-    // Codex and others with empty fallback surface the failure.
   }
 
   const effective = getModelConfig(effectiveAlias) ?? config;
@@ -60,12 +59,12 @@ export async function routeTextRequest(
     prompt,
   };
 
-  const adapter = new MockTextAdapter(
-    effectiveAlias,
+  const { adapter, mode } = createTextAdapter(effectiveAlias, {
     failure,
     fallbackUsed,
     fallbackReason,
-  );
+    forceMock: options?.forceMock,
+  });
 
   return {
     request,
@@ -75,6 +74,7 @@ export async function routeTextRequest(
       requestedAlias,
       fallbackUsed,
       fallbackReason,
+      mode,
     },
   };
 }

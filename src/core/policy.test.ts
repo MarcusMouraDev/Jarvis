@@ -3,6 +3,7 @@ import {
   BudgetTracker,
   canSendToProvider,
   redactSecrets,
+  redactStructured,
   requiresConfirmation,
 } from "./policy";
 
@@ -27,6 +28,27 @@ describe("policy", () => {
     );
     expect(serialized).not.toContain("abc123");
     expect(() => JSON.parse(serialized)).not.toThrow();
+  });
+
+  it("redige valores estruturados e assignments quoted com escapes", () => {
+    const secret = 'alpha"beta\\gamma';
+    const assignment = `token=${JSON.stringify(secret)}`;
+
+    const plainRedacted = redactSecrets(assignment);
+    expect(plainRedacted).toContain("[REDACTADO]");
+    expect(plainRedacted).not.toContain("alpha");
+    expect(plainRedacted).not.toContain("beta");
+    expect(plainRedacted).not.toContain("gamma");
+
+    const structured = redactStructured({
+      nested: { token: secret },
+      note: assignment,
+    });
+    const serialized = JSON.stringify(structured);
+    expect(() => JSON.parse(serialized)).not.toThrow();
+    expect(serialized).not.toContain("alpha");
+    expect(serialized).not.toContain("beta");
+    expect(serialized).not.toContain("gamma");
   });
 
   it("bloqueia secret para qualquer provedor", () => {

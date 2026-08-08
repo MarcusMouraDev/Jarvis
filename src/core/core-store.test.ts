@@ -155,6 +155,7 @@ describe("core-store", () => {
   });
 
   it("requires sessions for new runs and stores redacted canonical JSON", () => {
+    const secret = 'alpha"beta\\gamma';
     store = openCoreStore();
 
     expect(() =>
@@ -179,7 +180,8 @@ describe("core-store", () => {
       workspace: {
         kind: "existing",
         path: "/tmp/project",
-        credentials: { apiKey: "do-not-store" },
+        credentials: { apiKey: secret },
+        note: `token=${JSON.stringify(secret)}`,
       },
       status: "running",
     });
@@ -191,9 +193,14 @@ describe("core-store", () => {
         .get("run-1") as { value: string }
     ).value;
     expect(row).toBe(
-      '{"credentials":{"apiKey":"[REDACTADO]"},"kind":"existing","path":"/tmp/project"}',
+      '{"credentials":{"apiKey":"[REDACTADO]"},"kind":"existing","note":"[REDACTADO]=\\"[REDACTADO]\\"","path":"/tmp/project"}',
     );
-    expect(row).not.toContain("do-not-store");
+    expect(row).not.toContain("alpha");
+    expect(row).not.toContain("beta");
+    expect(row).not.toContain("gamma");
+    expect(JSON.stringify(store.getRun("run-1")?.workspace)).not.toContain("alpha");
+    expect(JSON.stringify(store.getRun("run-1")?.workspace)).not.toContain("beta");
+    expect(JSON.stringify(store.getRun("run-1")?.workspace)).not.toContain("gamma");
   });
 
   it("appends monotonic events and replays strictly after a sequence", () => {

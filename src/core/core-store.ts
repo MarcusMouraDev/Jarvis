@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { getJarvisDataDir } from "./data-dir";
-import { redactSecrets } from "./policy";
+import { redactSecrets, redactStructured } from "./policy";
 import type { PrivacyClass } from "./types";
 
 export type JsonValue =
@@ -160,32 +160,28 @@ const migrations = [
   },
 ] as const;
 
-const sensitiveKey = /^(?:api[_-]?key|token|password|secret|authorization)$/i;
-
 function now(): string {
   return new Date().toISOString();
 }
 
-function normalizeJson(value: JsonValue): JsonValue {
+function sortJson(value: JsonValue): JsonValue {
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new TypeError("JSON numbers must be finite");
     return value;
   }
-  if (typeof value === "string") return redactSecrets(value);
-  if (Array.isArray(value)) return value.map(normalizeJson);
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(sortJson);
 
   const normalized = Object.create(null) as { [key: string]: JsonValue };
   for (const key of Object.keys(value).sort()) {
-    normalized[key] = sensitiveKey.test(key)
-      ? "[REDACTADO]"
-      : normalizeJson(value[key]);
+    normalized[key] = sortJson(value[key]);
   }
   return normalized;
 }
 
 function canonicalJson(value: JsonValue): string {
-  return JSON.stringify(normalizeJson(value));
+  return JSON.stringify(sortJson(redactStructured(value)));
 }
 
 function parseJson(value: string): JsonValue {

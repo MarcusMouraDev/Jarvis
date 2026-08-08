@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -80,6 +81,34 @@ describe("run-ledger", () => {
     });
     expect(run.summary).toContain("[REDACTADO]");
     expect(run.summary).not.toContain("supersecret");
+  });
+
+  it("persiste e hidrata JSON válido com segredo contendo escapes", () => {
+    const secret = 'alpha"beta\\gamma';
+    const run = startRun({ kind: "shell", summary: "safe summary" });
+    const approval = requestApproval({
+      runId: run.id,
+      action: "terminal.run",
+      scope: "shell.run",
+      reasons: [`token=${JSON.stringify(secret)}`],
+    });
+
+    const persisted = readFileSync(ledgerFile, "utf8");
+    const records = persisted
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+    expect(records).toHaveLength(2);
+    expect(persisted).not.toContain("alpha");
+    expect(persisted).not.toContain("beta");
+    expect(persisted).not.toContain("gamma");
+
+    clearLedger();
+    const hydrated = getApproval(approval.id);
+    expect(hydrated).not.toBeNull();
+    expect(JSON.stringify(hydrated)).not.toContain("alpha");
+    expect(JSON.stringify(hydrated)).not.toContain("beta");
+    expect(JSON.stringify(hydrated)).not.toContain("gamma");
   });
 
   it("filtra runs por kind, status e texto", () => {

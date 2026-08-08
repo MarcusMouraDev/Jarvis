@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { getJarvisDataDir } from "./data-dir";
-import { redactSecrets } from "./policy";
+import { redactSecrets, redactStructured } from "./policy";
 
 export type RunKind =
   | "chat"
@@ -167,7 +167,7 @@ function persist(record: unknown) {
   try {
     mkdirSync(ledgerDir(), { recursive: true });
     maybeRotateLedger();
-    const line = redactSecrets(JSON.stringify(record));
+    const line = JSON.stringify(redactStructured(record));
     appendFileSync(ledgerPath(), `${line}\n`, "utf8");
   } catch {
     // Disk persistence is best-effort; in-memory remains source of truth.

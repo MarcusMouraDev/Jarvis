@@ -5,7 +5,7 @@ import {
 } from "./safe-tool-manifests";
 
 describe("safe tool manifests", () => {
-  it("defines the five M1 tools with complete versioned policy metadata", () => {
+  it("defines M1 tools plus OmniRoute read tools with complete versioned policy metadata", () => {
     const manifests = listSafeToolManifests();
 
     expect(manifests.map((tool) => tool.id)).toEqual([
@@ -14,6 +14,9 @@ describe("safe tool manifests", () => {
       "terminal.run",
       "file.patch",
       "project.create",
+      "omniroute.list_models",
+      "omniroute.check_quota",
+      "omniroute.compression_status",
     ]);
     for (const tool of manifests) {
       expect(tool.version).toMatch(/^1\.\d+\.\d+$/);

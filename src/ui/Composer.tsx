@@ -42,6 +42,8 @@ const HINTS = [
   "/profile conversa",
   "/voice on",
   "/voice off",
+  "/clap on",
+  "/clap off",
 ];
 
 export function Composer({

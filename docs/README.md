@@ -10,4 +10,5 @@ Esta documentação descreve a evolução segura do Jarvis sem substituir o comp
 - [ADR-0001](adr/0001-safe-agent-core.md)
 - [Especificação do Jarvis Evolution](specifications/jarvis-evolution-core.md)
 - [Plano de implementação](plans/jarvis-evolution-core.md)
+- [Integração crítica multi-backend (OmniRoute / Gemini / Cursor)](plans/omniroute-critical-integration.md)
 - [Baseline verificada](baseline.md)

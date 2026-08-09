@@ -4,6 +4,7 @@ import {
   CursorTextSafeAdapter,
   GeminiSafeAdapter,
   LocalOllamaAdapter,
+  LocalOpenAICompatibleAdapter,
   type CursorTextRuntime,
   type ModelTransport,
   type SafeModelEvent,
@@ -184,6 +185,77 @@ describe("safe model adapters", () => {
     ]);
     expect(events[1]).toMatchObject({
       callId: "call-1",
+      toolId: "code.context",
+      input: { paths: ["src"] },
+    });
+  });
+
+  it("routes local alias through OpenAI-compatible OmniRoute stream", async () => {
+    let sent: TransportRequest | undefined;
+    const adapter = new LocalOpenAICompatibleAdapter({
+      transport: transportWith(
+        [
+          {
+            choices: [
+              {
+                delta: { content: "Via OmniRoute" },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call-omni",
+                      function: {
+                        name: "code__context",
+                        arguments: '{"paths":["src"]}',
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+            usage: {
+              prompt_tokens: 2,
+              completion_tokens: 3,
+              total_tokens: 5,
+            },
+          },
+        ],
+        (value) => {
+          sent = value;
+        },
+      ),
+      readEnv: (name) =>
+        ({
+          LOCAL_OPENAI_BASE_URL: "http://127.0.0.1:20128/",
+          LOCAL_OPENAI_MODEL: "omni-local",
+          LOCAL_OPENAI_API_KEY: "not-needed",
+        })[name],
+    });
+
+    const events = await collect(adapter.stream(request));
+
+    expect(sent).toMatchObject({
+      url: "http://127.0.0.1:20128/v1/chat/completions",
+      protocol: "sse",
+      body: { model: "omni-local", stream: true },
+    });
+    expect(sent?.headers?.Authorization).toBeUndefined();
+    expect(sent?.credential).toBeUndefined();
+    expect(events.map((event) => event.type)).toEqual([
+      "text.delta",
+      "tool.call",
+      "usage",
+      "completion",
+    ]);
+    expect(events[1]).toMatchObject({
+      callId: "call-omni",
       toolId: "code.context",
       input: { paths: ["src"] },
     });

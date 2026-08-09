@@ -13,6 +13,11 @@ import type { AgentCatalog } from "./agent-catalog";
 import { getAgent } from "./agent-catalog";
 import type { CoreRun, CoreStore, JsonValue } from "./core-store";
 import { redactSecrets, redactStructured } from "./policy";
+import { runOmnirouteMcpTool } from "@/integrations/omniroute-mcp/run";
+import {
+  compressToolOutput,
+  type CompressionMeta,
+} from "./context-compression";
 import {
   getSafeToolManifest,
   type SafeToolId,
@@ -86,7 +91,11 @@ export type GatewayResult =
       invocationId: string;
       runId: string;
       toolId: SafeToolId;
+      /** Model-facing output (may be RTK-compressed). */
       output: unknown;
+      /** Raw sanitized output as persisted in core-store. */
+      rawOutput?: unknown;
+      compression?: CompressionMeta;
     }
   | {
       status: "approval_required";
@@ -901,7 +910,25 @@ export class SafeToolGateway {
     if (manifest.id === "terminal.read") return this.prepareTerminalRead(root, input, manifest);
     if (manifest.id === "terminal.run") return this.prepareTerminalRun(root, input, manifest);
     if (manifest.id === "file.patch") return this.prepareFilePatch(root, input);
-    return this.prepareProjectCreate(run, input);
+    if (manifest.id === "project.create") return this.prepareProjectCreate(run, input);
+    return this.prepareOmnirouteMcp(manifest, input);
+  }
+
+  private prepareOmnirouteMcp(
+    manifest: SafeToolManifest,
+    input: JsonValue,
+  ): PreparedTool {
+    return {
+      input,
+      effect: { kind: "omniroute_mcp", toolId: manifest.id },
+      preview: { kind: "omniroute_mcp", toolId: manifest.id },
+      run: async () => {
+        const result = await runOmnirouteMcpTool(manifest.id, input);
+        if (result.status === "denied") fail(result.reason);
+        if (result.status === "failed") fail(result.reason);
+        return result.output;
+      },
+    };
   }
 
   private prepareCodeContext(root: string, input: JsonValue): PreparedTool {
@@ -1173,14 +1200,23 @@ export class SafeToolGateway {
     prepared: PreparedTool,
   ): Promise<GatewayResult> {
     try {
-      const output = sanitizeOutput(manifest, await prepared.run());
+      const rawOutput = sanitizeOutput(manifest, await prepared.run());
       this.options.store.finishSafeInvocation({
         invocationId,
         status: "completed",
-        output,
+        output: rawOutput,
         now: this.clock().toISOString(),
       });
-      return { status: "completed", invocationId, runId: run.runId, toolId: manifest.id, output };
+      const compressed = compressToolOutput(manifest.id, rawOutput);
+      return {
+        status: "completed",
+        invocationId,
+        runId: run.runId,
+        toolId: manifest.id,
+        output: compressed.output,
+        rawOutput,
+        compression: compressed.meta,
+      };
     } catch (error) {
       const possiblyStarted =
         manifest.sideEffect !== "none" &&

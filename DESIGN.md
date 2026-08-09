@@ -9,7 +9,7 @@ Este documento descreve somente o sistema visual. Para arquitetura e evolução 
 | `idle` | Neutro frio | Respiração quase imperceptível |
 | `listening` | Azul | Deslocamento dirigido pelo microfone |
 | `thinking` | Laranja | Turbulência interna, sem áudio |
-| `speaking` | Ciano | Reativo à saída de voz (MiniMax mp3) |
+| `speaking` | Ciano | Reativo à saída de voz (síntese do navegador) |
 | `asking` | Vermelho | Pulso lento, campo quase parado |
 | `failure` | Sem cor nova | Congela o matiz anterior via `resolvePresenceVisual`, perde coerência, dessatura |
 

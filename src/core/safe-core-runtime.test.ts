@@ -50,6 +50,19 @@ describe("safe-core runtime", () => {
       name === "JARVIS_LOCAL_MODEL" ? "qwen-local" : undefined,
     );
     expect(Object.keys(localOnly)).toEqual(["local"]);
+    expect(localOnly.local?.model).toBe("qwen-local");
+  });
+
+  it("prefers OmniRoute OpenAI-compatible local over Ollama when both are set", () => {
+    const adapters = buildSafeAdapters((name) =>
+      ({
+        LOCAL_OPENAI_BASE_URL: "http://127.0.0.1:20128",
+        LOCAL_OPENAI_MODEL: "omni-model",
+        JARVIS_LOCAL_MODEL: "qwen-local",
+      })[name],
+    );
+    expect(Object.keys(adapters)).toEqual(["local"]);
+    expect(adapters.local?.model).toBe("omni-model");
   });
 
   it("lists only real direct-child workspace directories without returning paths", () => {
@@ -83,7 +96,7 @@ describe("safe-core runtime", () => {
     });
 
     expect(runtime.store).toBeDefined();
-    expect(runtime.catalog.defaultModel).toBe("local");
+    expect(runtime.catalog.defaultModel).toBe("cursor-text");
     expect(runtime.gateway).toBeDefined();
     expect(runtime.orchestrator).toBeDefined();
     expect(runtime.service.listAgents()[0]?.id).toBe("Hermes");

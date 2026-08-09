@@ -76,6 +76,8 @@ export interface TransportRequest {
     header: string;
     prefix?: string;
   };
+  /** Extra headers (e.g. optional Bearer for local OpenAI-compatible gateways). */
+  headers?: Record<string, string>;
   body: Record<string, unknown>;
   signal?: AbortSignal;
 }
@@ -222,6 +224,7 @@ export class FetchModelTransport implements ModelTransport {
     const headers: Record<string, string> = {
       Accept: request.protocol === "sse" ? "text/event-stream" : "application/x-ndjson",
       "Content-Type": "application/json",
+      ...(request.headers ?? {}),
     };
     if (request.credential) {
       headers[request.credential.header] = `${request.credential.prefix ?? ""}${requiredEnv(
@@ -501,6 +504,184 @@ function ollamaMessages(messages: SafeModelMessage[], tools: SafeModelToolDefini
     }
     return { role: "tool", content: JSON.stringify(message.output) };
   });
+}
+
+function openAiChatMessages(messages: SafeModelMessage[], tools: SafeModelToolDefinition[]) {
+  return messages.map((message) => {
+    if (message.role === "user") return { role: "user", content: message.content };
+    const tool = tools.find((candidate) => candidate.id === message.toolId);
+    if (message.role === "assistant_tool_call") {
+      return {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: message.callId,
+            type: "function",
+            function: {
+              name: tool?.name ?? message.toolId,
+              arguments: JSON.stringify(message.input),
+            },
+          },
+        ],
+      };
+    }
+    return {
+      role: "tool",
+      tool_call_id: message.callId,
+      content: JSON.stringify(message.output),
+    };
+  });
+}
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
+
+/**
+ * OmniRoute / local OpenAI-compatible gateway — Safe Core alias `local`.
+ * Prefers LOCAL_OPENAI_* over Ollama when configured.
+ */
+export class LocalOpenAICompatibleAdapter extends HttpSafeAdapter {
+  readonly alias = "local" as const;
+  readonly provider = "local" as const;
+  readonly supportsTools = true;
+  readonly model: string;
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+  private readonly pendingTools = new Map<
+    number,
+    { id: string; name: string; args: string }
+  >();
+
+  constructor(options: HttpAdapterOptions = {}) {
+    super(options.transport);
+    const readEnv = options.readEnv ?? processEnv;
+    const base = readEnv("LOCAL_OPENAI_BASE_URL")?.trim();
+    if (!base) throw new Error("missing_env:LOCAL_OPENAI_BASE_URL");
+    this.baseUrl = normalizeBaseUrl(base);
+    this.model = readEnv("LOCAL_OPENAI_MODEL")?.trim() || "local";
+    this.apiKey = readEnv("LOCAL_OPENAI_API_KEY")?.trim() || "not-needed";
+  }
+
+  protected request(input: SafeModelRequest, signal?: AbortSignal): TransportRequest {
+    const headers: Record<string, string> = {};
+    if (this.apiKey && this.apiKey !== "not-needed") {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    return {
+      provider: this.provider,
+      url: `${this.baseUrl}/v1/chat/completions`,
+      protocol: "sse",
+      headers,
+      body: {
+        model: this.model,
+        messages: openAiChatMessages(input.messages, input.tools),
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(input.tools.length
+          ? {
+              tools: input.tools.map((tool) => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.inputSchema,
+                },
+              })),
+            }
+          : {}),
+      },
+      signal,
+    };
+  }
+
+  protected normalize(input: SafeModelRequest, chunk: unknown): SafeModelEvent[] {
+    const root = record(chunk);
+    if (!root) return [];
+    const events: SafeModelEvent[] = [];
+    const choice = Array.isArray(root.choices) ? record(root.choices[0]) : null;
+    const delta = record(choice?.delta);
+
+    if (typeof delta?.content === "string" && delta.content) {
+      events.push({
+        type: "text.delta",
+        provider: this.provider,
+        model: this.model,
+        text: delta.content,
+      });
+    }
+
+    const toolCalls = Array.isArray(delta?.tool_calls) ? delta.tool_calls : [];
+    for (const rawCall of toolCalls) {
+      const call = record(rawCall);
+      if (!call) continue;
+      const index = typeof call.index === "number" ? call.index : 0;
+      const fn = record(call.function);
+      const existing = this.pendingTools.get(index) ?? {
+        id: typeof call.id === "string" ? call.id : `${input.requestId}:${index}`,
+        name: "",
+        args: "",
+      };
+      if (typeof call.id === "string" && call.id) existing.id = call.id;
+      if (typeof fn?.name === "string" && fn.name) existing.name = fn.name;
+      if (typeof fn?.arguments === "string") existing.args += fn.arguments;
+      this.pendingTools.set(index, existing);
+    }
+
+    const usage = record(root.usage);
+    const finish = choice?.finish_reason;
+    if (typeof finish === "string" && finish) {
+      if (finish === "tool_calls" || this.pendingTools.size > 0) {
+        for (const pending of this.pendingTools.values()) {
+          const toolId = toolIdFor(pending.name, input.tools);
+          if (!toolId) continue;
+          try {
+            events.push({
+              type: "tool.call",
+              provider: this.provider,
+              model: this.model,
+              callId: pending.id,
+              toolId,
+              input: asJsonValue(JSON.parse(pending.args || "{}")),
+            });
+          } catch {
+            // Malformed tool args are dropped; provider will retry or fail later.
+          }
+        }
+        this.pendingTools.clear();
+      }
+      if (usage) {
+        events.push({
+          type: "usage",
+          provider: this.provider,
+          model: this.model,
+          promptTokens: number(usage.prompt_tokens),
+          completionTokens: number(usage.completion_tokens),
+          totalTokens: number(usage.total_tokens),
+          estimatedCostUsd: 0,
+        });
+      }
+      events.push({
+        type: "completion",
+        provider: this.provider,
+        model: this.model,
+        finishReason: finishReason(finish),
+      });
+    } else if (usage) {
+      events.push({
+        type: "usage",
+        provider: this.provider,
+        model: this.model,
+        promptTokens: number(usage.prompt_tokens),
+        completionTokens: number(usage.completion_tokens),
+        totalTokens: number(usage.total_tokens),
+        estimatedCostUsd: 0,
+      });
+    }
+
+    return events;
+  }
 }
 
 export class LocalOllamaAdapter extends HttpSafeAdapter {

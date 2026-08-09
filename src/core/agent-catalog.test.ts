@@ -76,7 +76,7 @@ describe("agent catalog", () => {
 
     const catalog = loadAgentCatalogFromYaml(raw);
 
-    expect(catalog.defaultModel).toBe("local");
+    expect(catalog.defaultModel).toBe("cursor-text");
     expect(catalog.models.local).toMatchObject({
       provider: "local",
       costsExtra: false,
@@ -93,7 +93,13 @@ describe("agent catalog", () => {
     ]);
     expect(getAgent(catalog, "Planner")).toMatchObject({
       mutationMode: "none",
-      tools: ["code.context", "terminal.read"],
+      tools: [
+        "code.context",
+        "terminal.read",
+        "omniroute.list_models",
+        "omniroute.check_quota",
+        "omniroute.compression_status",
+      ],
       budgetUsd: 0,
     });
   });

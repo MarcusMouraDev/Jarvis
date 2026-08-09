@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MockVoiceAdapter } from "@/adapters/mock-voice";
 import type { ComposerChip } from "@/composer/mention-types";
 import { serializeUserPrompt } from "@/composer/serialize-payload";
 import {
@@ -22,6 +21,9 @@ import {
 } from "@/state/presence-config";
 import { AgentStateMachine } from "@/state/agent-state";
 import { useAudioLevel } from "@/audio/use-audio-level";
+import { useClapWake } from "@/audio/use-clap-wake";
+import { speakWithBrowser } from "@/audio/speech-synthesis";
+import { useVoiceListen } from "@/audio/use-voice-listen";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useWebGLAvailable } from "@/hooks/use-webgl";
 import { PresenceField } from "@/presence/PresenceField";
@@ -58,6 +60,7 @@ export function JarvisShell() {
   const [modelAlias, setModelAlias] = useState(jarvisConfig.defaultModel);
   const [privacyClass] = useState<PrivacyClass>("internal");
   const [voiceOn, setVoiceOn] = useState(jarvisConfig.voice.autoPlay);
+  const [clapWakeOn, setClapWakeOn] = useState(true);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [spent, setSpent] = useState(0);
@@ -102,8 +105,9 @@ export function JarvisShell() {
   const reducedMotion = useReducedMotion();
   const documentHidden = useDocumentHidden();
   const webglAvailable = useWebGLAvailable();
-  const { levelRef, micPermission } = useAudioLevel(state, audioRef, {
-    enabled: !reducedMotion,
+  const listening = state === "listening";
+  const { levelRef: audioLevelRef, micPermission } = useAudioLevel(state, audioRef, {
+    enabled: !reducedMotion && !listening,
   });
 
   const [instrumentHeight, setInstrumentHeight] = useState(56);
@@ -145,6 +149,21 @@ export function JarvisShell() {
       // Persistence is best-effort.
     });
   }, []);
+
+  const handleClapWake = useCallback(() => {
+    go("listening");
+    pushMessage({
+      id: crypto.randomUUID(),
+      role: "system",
+      text: "*clap clap* detectado — Jarvis ouvindo.",
+    });
+  }, [go, pushMessage]);
+
+  useClapWake({
+    enabled: clapWakeOn && !reducedMotion,
+    state,
+    onWake: handleClapWake,
+  });
 
   const refreshRuns = useCallback(async () => {
     try {
@@ -344,7 +363,7 @@ export function JarvisShell() {
       pushMessage({
         id: crypto.randomUUID(),
         role: "system",
-        text: "Primeiro uso de voz: áudio sintético mock (MiniMax real não conectado).",
+        text: "Primeiro uso de voz: leitura via síntese do navegador.",
       });
     }
 
@@ -352,21 +371,11 @@ export function JarvisShell() {
     setBusy(true);
     try {
       if (signal?.aborted) throw new Error("aborted");
-      const voice = new MockVoiceAdapter();
-      const response = await voice.synthesize({
-        voiceId: jarvisConfig.voice.voiceId,
-        locale: jarvisConfig.voice.locale,
-        audioFormat: jarvisConfig.voice.audioFormat,
-        text,
-        requestId: crypto.randomUUID(),
-      });
-      if (signal?.aborted) throw new Error("aborted");
       go("speaking");
-      const audio = audioRef.current;
-      if (audio) {
-        audio.src = response.audioPath;
-        await audio.play().catch(() => undefined);
-      }
+      await speakWithBrowser(text, {
+        locale: jarvisConfig.voice.locale,
+        signal,
+      });
     } catch (err) {
       if (err instanceof Error && err.message === "aborted") return;
       go("failure");
@@ -456,6 +465,34 @@ export function JarvisShell() {
         });
         return true;
       }
+    }
+
+    if (cmd === "/clap") {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === "on") {
+        setClapWakeOn(true);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Ativação por duas palmas ligada. Bata palmas duas vezes para ouvir.",
+        });
+        return true;
+      }
+      if (sub === "off") {
+        setClapWakeOn(false);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Ativação por palmas desligada.",
+        });
+        return true;
+      }
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: `Palmas ${clapWakeOn ? "ligadas" : "desligadas"} · duas palmas rápidas ativam o modo ouvir`,
+      });
+      return true;
     }
 
     if (cmd === "/speak") {
@@ -847,6 +884,42 @@ export function JarvisShell() {
     }
   };
 
+  const sendChatRef = useRef(sendChat);
+  useEffect(() => {
+    sendChatRef.current = sendChat;
+  }, [sendChat]);
+
+  const handleVoiceTranscript = useCallback(
+    async (text: string) => {
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        text,
+      });
+      setInput("");
+      setComposerChips([]);
+      await sendChatRef.current(text);
+    },
+    [pushMessage],
+  );
+
+  const { levelRef: listenLevelRef } = useVoiceListen({
+    active: listening && !busy,
+    onTranscript: (text) => {
+      void handleVoiceTranscript(text);
+    },
+    onError: (message) => {
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: `Whisper: falha na transcrição (${message}).`,
+      });
+      go("failure");
+    },
+  });
+
+  const levelRef = listening ? listenLevelRef : audioLevelRef;
+
   const handlePaletteAction = async (
     action: string,
     meta?: { skill?: string; shift?: boolean },
@@ -922,6 +995,7 @@ export function JarvisShell() {
         spentUsd={spent}
         budgetUsd={BUDGET_USD}
         voiceOn={voiceOn}
+        clapWakeOn={clapWakeOn}
         micPermission={micPermission}
         onHeightChange={onInstrumentHeight}
       />

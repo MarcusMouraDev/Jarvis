@@ -12,6 +12,7 @@ interface InstrumentBarProps {
   spentUsd: number;
   budgetUsd: number;
   voiceOn: boolean;
+  clapWakeOn: boolean;
   micPermission: MicPermission;
   onHeightChange?: (height: number) => void;
 }
@@ -32,6 +33,7 @@ export function InstrumentBar({
   spentUsd,
   budgetUsd,
   voiceOn,
+  clapWakeOn,
   micPermission,
   onHeightChange,
 }: InstrumentBarProps) {
@@ -84,6 +86,7 @@ export function InstrumentBar({
             {formatUsd(spentUsd)} / {formatUsd(budgetUsd)}
           </span>
           <span className="whitespace-nowrap">{voiceOn ? "voz:on" : "voz:off"}</span>
+          <span className="whitespace-nowrap">{clapWakeOn ? "palmas:on" : "palmas:off"}</span>
         </div>
       </div>
     </header>

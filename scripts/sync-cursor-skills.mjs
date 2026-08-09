@@ -1,24 +1,37 @@
 #!/usr/bin/env node
 /**
- * Espelha as skills oficiais do Cursor (~/.cursor/skills-cursor e ~/.cursor/skills)
- * em .cursor/skills do projeto via symlinks, para o IDE e o runtime local.
+ * Espelha skills do host em .cursor/skills do projeto via symlinks.
+ * Fontes (prioridade crescente — a última vence em colisão de nome):
+ *   ~/.cursor/skills-cursor, ~/.cursor/skills, ~/.claude/skills,
+ *   ~/.codex/skills, ~/.agents/skills
  */
-import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const targetRoot = join(projectRoot, ".cursor", "skills");
 const sources = [
-  join(homedir(), ".cursor", "skills-cursor"),
-  join(homedir(), ".cursor", "skills"),
+  { label: "cursor/skills-cursor", path: join(homedir(), ".cursor", "skills-cursor") },
+  { label: "cursor/skills", path: join(homedir(), ".cursor", "skills") },
+  { label: "claude/skills", path: join(homedir(), ".claude", "skills") },
+  { label: "codex/skills", path: join(homedir(), ".codex", "skills") },
+  { label: "agents/skills", path: join(homedir(), ".agents", "skills") },
 ];
 
 mkdirSync(targetRoot, { recursive: true });
 
 const linked = [];
+const byName = new Map();
 
-for (const source of sources) {
+for (const { label, path: source } of sources) {
   if (!existsSync(source)) continue;
   for (const entry of readdirSync(source, { withFileTypes: true })) {
     if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
@@ -27,9 +40,11 @@ for (const source of sources) {
     const dest = join(targetRoot, entry.name);
     rmSync(dest, { recursive: true, force: true });
     symlinkSync(skillDir, dest);
-    linked.push({ name: entry.name, from: skillDir });
+    byName.set(entry.name, { name: entry.name, from: skillDir, source: label });
   }
 }
+
+linked.push(...byName.values());
 
 writeFileSync(
   join(targetRoot, "README.md"),
@@ -39,9 +54,18 @@ Este diretório é gerado por \`npm run skills:sync\`.
 
 Skills espelhadas: **${linked.length}**
 
-${linked.map((s) => `- \`${s.name}\` → \`${relative(projectRoot, s.from)}\``).join("\n")}
+| Fonte | Skills |
+| --- | --- |
+${sources
+  .map(
+    (s) =>
+      `| \`${s.label}\` | ${linked.filter((l) => l.source === s.label).length} |`,
+  )
+  .join("\n")}
 
-Não edite skills oficiais aqui — elas apontam para \`~/.cursor/skills-cursor\` / \`~/.cursor/skills\`.
+${linked.map((s) => `- \`${s.name}\` (\`${s.source}\`) → \`${relative(projectRoot, s.from)}\``).join("\n")}
+
+Não edite skills oficiais aqui — são symlinks para o host.
 `,
 );
 

@@ -101,7 +101,7 @@ describe("SafeCoreService", () => {
 
     expect(snapshot.run).toMatchObject({
       agentId: "Hermes",
-      requestedModel: "local",
+      requestedModel: "cursor-text",
       workspace: { kind: "none", label: "Sem workspace" },
     });
     expect(orchestrator.execute).toHaveBeenCalledWith(

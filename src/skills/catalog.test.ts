@@ -4,10 +4,11 @@ import { listSkills, selectSkillsForPrompt } from "./catalog";
 describe("skills catalog", () => {
   it("lista skills do Cursor disponíveis no host", () => {
     const skills = listSkills();
-    expect(skills.length).toBeGreaterThan(0);
+    expect(skills.length).toBeGreaterThan(20);
     expect(skills.some((s) => s.name === "sdk" || s.name === "create-skill")).toBe(
       true,
     );
+    expect(skills.some((s) => s.source === "codex")).toBe(true);
   });
 
   it("seleciona skills por palavras do prompt", () => {

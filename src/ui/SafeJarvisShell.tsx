@@ -30,7 +30,10 @@ import { SafeAgentSelector } from "./SafeAgentSelector";
 import { SafeApprovalCard } from "./SafeApprovalCard";
 import { SafeInstrumentBar } from "./SafeInstrumentBar";
 import { StateLabel } from "./StateLabel";
+import type { ComposerChip } from "@/composer/mention-types";
 import type { ChatMessage } from "./HistoryPanel";
+
+const EMPTY_CHIPS: ComposerChip[] = [];
 
 const ACTIVE_STATUSES = new Set([
   "pending",
@@ -400,6 +403,7 @@ export function SafeJarvisShell() {
               <Composer
                 value={input}
                 disabled={runIsActive}
+                chips={EMPTY_CHIPS}
                 onChange={setInput}
                 onSubmit={() => void onSubmit()}
               />

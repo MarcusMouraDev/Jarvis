@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { listModelAliases, getModelConfig } from "./config";
 import { isModelAliasAvailable } from "@/adapters/factory";
 import type { PrivacyClass } from "./types";
@@ -10,12 +11,84 @@ import {
 } from "./routing-score";
 import { getTelemetryEvents } from "./telemetry";
 import type { AgentCatalog } from "./agent-catalog";
+import type { JsonValue } from "./core-store";
 
 export interface SafeModelSelection {
   alias: string;
   provider: string;
+  model: string;
   costsExtra: boolean;
   reason: "requested" | "local_default" | "fallback";
+  cloudEgressDigest?: string;
+}
+
+function stableJson(value: JsonValue): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+    .join(",")}}`;
+}
+
+export function createCloudEgressDigest(input: {
+  content: string;
+  context: JsonValue;
+  provider: string;
+  model: string;
+}): string {
+  return createHash("sha256")
+    .update(
+      stableJson({
+        content: input.content,
+        context: input.context,
+        provider: input.provider,
+        model: input.model,
+      }),
+    )
+    .digest("hex");
+}
+
+function digestMatches(actual: string, approved: string | undefined): boolean {
+  if (!/^[a-f\d]{64}$/i.test(approved ?? "")) return false;
+  return timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(approved!, "hex"));
+}
+
+const retryableFallbacks = new Set([
+  "timeout",
+  "rate_limit",
+  "server_error",
+  "unavailable",
+]);
+
+export function buildSafeFallbackAliases(options: {
+  catalog: AgentCatalog;
+  requestedAlias: string;
+  classification: string;
+  maxFallbacks?: number;
+}): string[] {
+  const requested = options.catalog.models[options.requestedAlias];
+  if (
+    !requested ||
+    requested.provider === "local" ||
+    !retryableFallbacks.has(options.classification)
+  ) {
+    return [];
+  }
+  const aliases: string[] = [];
+  const seen = new Set([options.requestedAlias]);
+  let current = requested;
+  const limit = Math.min(Math.max(options.maxFallbacks ?? 2, 0), 2);
+  while (aliases.length < limit) {
+    const next = current.fallback.find((alias) => !seen.has(alias));
+    if (!next) break;
+    seen.add(next);
+    aliases.push(next);
+    const definition = options.catalog.models[next];
+    if (!definition) break;
+    current = definition;
+  }
+  return aliases;
 }
 
 export function selectSafeModelAlias(options: {
@@ -24,8 +97,9 @@ export function selectSafeModelAlias(options: {
   privacyClass: PrivacyClass;
   availableAliases: readonly string[];
   allowPaidProvider?: boolean;
-  allowFallback?: boolean;
-  contentDigest?: string;
+  modelIds?: Readonly<Record<string, string>>;
+  content?: string;
+  context?: JsonValue;
   approvedCloudEgressDigest?: string;
 }): SafeModelSelection {
   const requestedAlias = options.requestedAlias ?? options.catalog.defaultModel;
@@ -38,9 +112,6 @@ export function selectSafeModelAlias(options: {
   }
 
   const candidates = [requestedAlias];
-  if (options.allowFallback) {
-    candidates.push(...requested.fallback.slice(0, 2));
-  }
 
   let deniedForCost = false;
   let deniedForEgress = false;
@@ -51,19 +122,33 @@ export function selectSafeModelAlias(options: {
       deniedForCost = true;
       continue;
     }
+    const effectiveModel = options.modelIds?.[alias] ?? alias;
+    let cloudEgressDigest: string | undefined;
     if (
       (options.privacyClass === "confidential" || options.privacyClass === "secret") &&
-      model.provider !== "local" &&
-      (!/^[a-f\d]{64}$/i.test(options.contentDigest ?? "") ||
-        options.approvedCloudEgressDigest !== options.contentDigest)
+      model.provider !== "local"
     ) {
-      deniedForEgress = true;
-      continue;
+      if (typeof options.content !== "string" || !options.modelIds?.[alias]) {
+        deniedForEgress = true;
+        continue;
+      }
+      cloudEgressDigest = createCloudEgressDigest({
+        content: options.content,
+        context: options.context ?? null,
+        provider: model.provider,
+        model: effectiveModel,
+      });
+      if (!digestMatches(cloudEgressDigest, options.approvedCloudEgressDigest)) {
+        deniedForEgress = true;
+        continue;
+      }
     }
     return {
       alias,
       provider: model.provider,
+      model: effectiveModel,
       costsExtra: model.costsExtra,
+      ...(cloudEgressDigest ? { cloudEgressDigest } : {}),
       reason:
         alias !== requestedAlias
           ? "fallback"

@@ -4,11 +4,11 @@ models:
   gemini:
     provider: google
     costs_extra: true
-    fallback: []
+    fallback: [codex-openai]
   codex-openai:
     provider: openai
     costs_extra: true
-    fallback: []
+    fallback: [cursor-text]
   cursor-text:
     provider: cursor
     costs_extra: false

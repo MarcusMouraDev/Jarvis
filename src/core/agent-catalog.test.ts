@@ -82,6 +82,9 @@ describe("agent catalog", () => {
       costsExtra: false,
       fallback: [],
     });
+    expect(catalog.models.gemini.fallback).toEqual(["codex-openai"]);
+    expect(catalog.models["codex-openai"].fallback).toEqual(["cursor-text"]);
+    expect(catalog.models["cursor-text"].fallback).toEqual([]);
     expect(Object.keys(catalog.agents)).toEqual([
       "Hermes",
       "Planner",

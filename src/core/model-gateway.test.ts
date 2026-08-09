@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildRoutingCandidates,
+  createCloudEgressDigest,
   isSmartRoutingEnabled,
   selectSafeModelAlias,
   selectModelAlias,
@@ -85,12 +86,20 @@ agents:
         privacyClass: "confidential",
         availableAliases: ["gemini"],
         allowPaidProvider: true,
-        contentDigest: "a".repeat(64),
+        content: "private prompt",
+        context: { files: ["a.ts"] },
+        modelIds: { gemini: "gemini-safe" },
       }),
     ).toThrow("cloud_egress_approval_required");
   });
 
-  it("accepts sensitive cloud egress only when approval matches the content digest", () => {
+  it("accepts sensitive cloud egress only for the exact content, context, provider and model", () => {
+    const approval = createCloudEgressDigest({
+      content: "private prompt",
+      context: { files: ["a.ts"] },
+      provider: "google",
+      model: "gemini-safe",
+    });
     expect(
       selectSafeModelAlias({
         catalog: safeCatalog,
@@ -98,10 +107,45 @@ agents:
         privacyClass: "secret",
         availableAliases: ["gemini"],
         allowPaidProvider: true,
-        contentDigest: "a".repeat(64),
-        approvedCloudEgressDigest: "a".repeat(64),
+        content: "private prompt",
+        context: { files: ["a.ts"] },
+        modelIds: { gemini: "gemini-safe" },
+        approvedCloudEgressDigest: approval,
       }),
-    ).toMatchObject({ alias: "gemini", provider: "google", costsExtra: true });
+    ).toMatchObject({
+      alias: "gemini",
+      provider: "google",
+      model: "gemini-safe",
+      cloudEgressDigest: approval,
+    });
+
+    expect(() =>
+      selectSafeModelAlias({
+        catalog: safeCatalog,
+        requestedAlias: "gemini",
+        privacyClass: "secret",
+        availableAliases: ["gemini"],
+        allowPaidProvider: true,
+        content: "private prompt",
+        context: { files: ["changed.ts"] },
+        modelIds: { gemini: "gemini-safe" },
+        approvedCloudEgressDigest: approval,
+      }),
+    ).toThrow("cloud_egress_approval_required");
+
+    expect(() =>
+      selectSafeModelAlias({
+        catalog: safeCatalog,
+        requestedAlias: "gemini",
+        privacyClass: "secret",
+        availableAliases: ["gemini"],
+        allowPaidProvider: true,
+        content: "private prompt",
+        context: { files: ["a.ts"] },
+        modelIds: { gemini: "different-model" },
+        approvedCloudEgressDigest: approval,
+      }),
+    ).toThrow("cloud_egress_approval_required");
   });
 
   it("never falls back from a missing local model to cloud", () => {

@@ -904,6 +904,31 @@ export class CoreStore {
     );
   }
 
+  transitionRunStatus(input: {
+    runId: string;
+    sessionId: string;
+    from: readonly string[];
+    to: string;
+    updatedAt?: string;
+  }): CoreRun {
+    if (input.from.length === 0) throw new TypeError("Run transition requires a source status");
+    const placeholders = input.from.map(() => "?").join(", ");
+    const changed = this.database
+      .prepare(
+        `UPDATE runs SET status = ?, updated_at = ?
+         WHERE run_id = ? AND session_id = ? AND status IN (${placeholders})`,
+      )
+      .run(
+        assertText(input.to, "run status"),
+        input.updatedAt ?? now(),
+        assertText(input.runId, "run id"),
+        assertText(input.sessionId, "session id"),
+        ...input.from.map((status) => assertText(status, "source run status")),
+      );
+    if (changed.changes !== 1) throw new Error("run_status_transition_failed");
+    return this.getRun(input.runId)!;
+  }
+
   createMessage(input: CreateMessageInput): CoreMessage {
     const messageId = assertText(
       input.messageId ?? crypto.randomUUID(),

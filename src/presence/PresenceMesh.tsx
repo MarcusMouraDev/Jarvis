@@ -36,15 +36,15 @@ interface PresenceMeshProps {
 }
 
 const LAYER_SCALE: Record<NeuralLayer, number> = {
-  core: 1.05,
-  cortex: 0.78,
-  micro: 0.42,
+  core: 0.95,
+  cortex: 0.62,
+  micro: 0.32,
 };
 
 const LAYER_OPACITY: Record<NeuralLayer, number> = {
   core: 1,
-  cortex: 0.92,
-  micro: 0.58,
+  cortex: 0.95,
+  micro: 0.72,
 };
 
 function makeNodeUniforms(
@@ -92,43 +92,76 @@ function makeLinkUniforms(initial: {
 }
 
 function OrbitRings() {
-  const geos = useMemo(() => {
-    return [0.95, 1.08, 1.2, 1.32, 1.42].map((r, i) => {
+  const { rings, dust } = useMemo(() => {
+    const ringGeos = [0.92, 1.05, 1.18, 1.3, 1.4].map((r, i) => {
       const curve = new THREE.EllipseCurve(
         0,
         0,
         r,
-        r * (0.9 + (i % 3) * 0.03),
+        r * (0.88 + (i % 3) * 0.04),
         0,
         Math.PI * 2,
         false,
-        i * 0.35,
+        i * 0.4,
       );
-      const pts = curve.getPoints(128);
+      const pts = curve.getPoints(160);
       const positions = new Float32Array(pts.length * 3);
       for (let j = 0; j < pts.length; j += 1) {
         positions[j * 3] = pts[j].x;
-        positions[j * 3 + 1] = pts[j].y * (0.28 + (i % 2) * 0.08);
+        positions[j * 3 + 1] = pts[j].y * (0.22 + (i % 2) * 0.1);
         positions[j * 3 + 2] = pts[j].y;
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
       return g;
     });
+
+    // Orbital dust beads like the reference rings of light
+    const dustCount = 420;
+    const dustPos = new Float32Array(dustCount * 3);
+    const dustPhase = new Float32Array(dustCount);
+    for (let i = 0; i < dustCount; i += 1) {
+      const ring = 0.95 + (i % 5) * 0.1;
+      const a = (i / dustCount) * Math.PI * 2 * 7;
+      const yTilt = Math.sin(i * 0.37) * 0.28;
+      dustPos[i * 3] = Math.cos(a) * ring;
+      dustPos[i * 3 + 1] = yTilt * ring;
+      dustPos[i * 3 + 2] = Math.sin(a) * ring * 0.92;
+      dustPhase[i] = (i % 97) / 97;
+    }
+    const dustGeo = new THREE.BufferGeometry();
+    dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
+    dustGeo.setAttribute("aPhase", new THREE.BufferAttribute(dustPhase, 1));
+    return { rings: ringGeos, dust: dustGeo };
   }, []);
+
+  const dustUniforms = useMemo(
+    () => makeNodeUniforms(PRESENCE_BY_STATE.thinking, "micro"),
+    [],
+  );
 
   return (
     <group rotation={[0.55, 0.25, 0.2]}>
-      {geos.map((g, i) => (
+      {rings.map((g, i) => (
         <lineLoop key={i} geometry={g}>
           <lineBasicMaterial
-            color="#6a849c"
+            color="#c87840"
             transparent
-            opacity={0.16 - i * 0.018}
+            opacity={0.2 - i * 0.02}
             depthWrite={false}
           />
         </lineLoop>
       ))}
+      <points geometry={dust}>
+        <shaderMaterial
+          vertexShader={nodeVertexShader}
+          fragmentShader={nodeFragmentShader}
+          uniforms={dustUniforms}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
     </group>
   );
 }
@@ -269,7 +302,7 @@ export function PresenceMesh({
   const outerLinkUniforms = useMemo(
     () => ({
       ...makeLinkUniforms(PRESENCE_BY_STATE.idle),
-      uLayerOpacity: { value: 0.55 },
+      uLayerOpacity: { value: 0.78 },
     }),
     [],
   );

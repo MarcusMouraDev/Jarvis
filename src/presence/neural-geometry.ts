@@ -44,26 +44,27 @@ export const DEFAULT_NEIGHBORS = 6;
 export const MAX_EDGES = 1200;
 
 const PROFILES: Record<NeuralQuality, Omit<NeuralProfile, "quality">> = {
+  // Densidade cinematográfica — volume preenchido, não cascas ocas
   mobile: {
-    coreCount: 120,
-    cortexCount: 200,
-    microCount: 140,
-    neighbors: 5,
-    maxEdges: 900,
+    coreCount: 220,
+    cortexCount: 340,
+    microCount: 260,
+    neighbors: 6,
+    maxEdges: 1800,
   },
   balanced: {
-    coreCount: 200,
-    cortexCount: 380,
-    microCount: 280,
-    neighbors: 6,
-    maxEdges: 2000,
+    coreCount: 420,
+    cortexCount: 680,
+    microCount: 520,
+    neighbors: 8,
+    maxEdges: 5200,
   },
   high: {
-    coreCount: 300,
-    cortexCount: 560,
-    microCount: 420,
-    neighbors: 7,
-    maxEdges: 3200,
+    coreCount: 640,
+    cortexCount: 980,
+    microCount: 780,
+    neighbors: 9,
+    maxEdges: 9000,
   },
 };
 
@@ -183,28 +184,30 @@ export function getNeuralProfile(input: {
   dpr: number;
   reducedMotion: boolean;
 }): NeuralProfile {
-  void input.reducedMotion; // density kept; motion handled by consumers
+  void input.reducedMotion;
   let quality: NeuralQuality = "balanced";
-  if (input.width < 640 || input.dpr > 2.25) quality = "mobile";
-  else if (input.width >= 1280 && input.dpr <= 1.75) quality = "high";
+  // Prefer dense on typical laptop/desktop; mobile only when narrow.
+  if (input.width < 640) quality = "mobile";
+  else if (input.width >= 1100 && input.dpr <= 2) quality = "high";
   return { quality, ...PROFILES[quality] };
 }
 
-function layerRadius(layer: NeuralLayer, index: number, count: number): number {
-  const t = count <= 1 ? 0 : index / (count - 1);
-  if (layer === "core") return 0.62 + t * 0.08;
-  if (layer === "cortex") return 0.82 + t * 0.18;
-  return 1.05 + t * 0.22;
-}
-
-function pointsForLayer(
-  layer: NeuralLayer,
+/**
+ * Volume ball — fills interior (pow bias packs mass toward center like a glowing core).
+ * Surface-only shells looked sparse vs the reference neural orb.
+ */
+function fibonacciVolume(
   count: number,
+  rMin: number,
+  rMax: number,
   phaseOffset: number,
+  centerBias = 0.55,
 ): NeuralPoint[] {
-  const base = fibonacciSphere(count, 1);
-  return base.map((p, i) => {
-    const radius = layerRadius(layer, i, count);
+  const dirs = fibonacciSphere(count, 1);
+  return dirs.map((p, i) => {
+    const u = hash01(phaseOffset + i * 17 + 3);
+    const t = Math.pow(u, centerBias);
+    const radius = rMin + (rMax - rMin) * t;
     return {
       x: p.x * radius,
       y: p.y * radius,
@@ -212,6 +215,21 @@ function pointsForLayer(
       phase: hash01(phaseOffset + i + 1),
     };
   });
+}
+
+function pointsForLayer(
+  layer: NeuralLayer,
+  count: number,
+  phaseOffset: number,
+): NeuralPoint[] {
+  if (layer === "core") {
+    return fibonacciVolume(count, 0.02, 0.58, phaseOffset, 0.42);
+  }
+  if (layer === "cortex") {
+    return fibonacciVolume(count, 0.48, 0.98, phaseOffset, 0.7);
+  }
+  // micro: outer filaments + orbital dust
+  return fibonacciVolume(count, 0.88, 1.38, phaseOffset, 0.85);
 }
 
 export function createLayeredNeuralGeometry(

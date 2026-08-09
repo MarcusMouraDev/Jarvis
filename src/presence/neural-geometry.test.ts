@@ -63,10 +63,15 @@ describe("neural-geometry", () => {
     const geometry = createLayeredNeuralGeometry(
       getNeuralProfile({ width: 1440, dpr: 1, reducedMotion: false }),
     );
-    expect(geometry.edges.length).toBeLessThanOrEqual(3200);
-    expect(geometry.core.points.length).toBe(300);
-    expect(geometry.cortex.points.length).toBe(560);
-    expect(geometry.micro.points.length).toBe(420);
+    expect(geometry.edges.length).toBeLessThanOrEqual(9000);
+    expect(geometry.core.points.length).toBe(640);
+    expect(geometry.cortex.points.length).toBe(980);
+    expect(geometry.micro.points.length).toBe(780);
+    const total =
+      geometry.core.points.length +
+      geometry.cortex.points.length +
+      geometry.micro.points.length;
+    expect(total).toBeGreaterThanOrEqual(2000);
   });
 
   it("camadas layered são determinísticas", () => {

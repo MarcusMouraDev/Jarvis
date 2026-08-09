@@ -9,6 +9,8 @@ uniform float uPulse;
 uniform float uReducedMotion;
 uniform vec3 uPointer;
 uniform float uPointerStrength;
+uniform float uPointScale;
+uniform float uTurbulence;
 
 varying float vGlow;
 varying float vPhase;
@@ -17,7 +19,7 @@ void main() {
   vPhase = aPhase;
   float breathe = uReducedMotion > 0.5
     ? 0.35
-    : 0.55 + 0.45 * sin(uTime * (1.4 + uPulse) + aPhase * 6.2831853);
+    : 0.55 + 0.45 * sin(uTime * (1.4 + uPulse + uTurbulence * 0.8) + aPhase * 6.2831853);
   float audio = uLevel * (0.65 + aPhase * 0.55);
   float gate = smoothstep(
     1.0 - clamp(uActivation, 0.05, 1.0) - 0.2,
@@ -34,11 +36,14 @@ void main() {
     pos += n * pull * uPointerStrength * 0.18;
     vGlow += pull * uPointerStrength * 0.55;
   }
+  if (uReducedMotion < 0.5 && uTurbulence > 0.01) {
+    pos += n * sin(uTime * (2.0 + aPhase * 3.0) + aPhase * 12.0) * uTurbulence * 0.04;
+  }
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mv;
-  float size = (5.5 + vGlow * 14.0 + pull * uPointerStrength * 8.0) * (320.0 / max(-mv.z, 0.001));
-  gl_PointSize = clamp(size, 3.0, 40.0);
+  float size = (5.5 + vGlow * 14.0 + pull * uPointerStrength * 8.0) * uPointScale * (320.0 / max(-mv.z, 0.001));
+  gl_PointSize = clamp(size, 3.0, 24.0);
 }
 `;
 
@@ -46,6 +51,7 @@ export const nodeFragmentShader = /* glsl */ `
 uniform vec3 uColorA;
 uniform vec3 uColorB;
 uniform float uCoherence;
+uniform float uLayerOpacity;
 
 varying float vGlow;
 varying float vPhase;
@@ -58,7 +64,7 @@ void main() {
   float core = smoothstep(0.42, 0.04, d);
   float halo = smoothstep(0.5, 0.14, d) * 0.85;
   float ring = smoothstep(0.28, 0.16, d) * smoothstep(0.08, 0.18, d) * 0.55;
-  float alpha = (core + halo + ring) * clamp(vGlow, 0.25, 1.85);
+  float alpha = (core + halo + ring) * clamp(vGlow, 0.25, 1.85) * uLayerOpacity;
 
   vec3 color = mix(uColorB, uColorA, 0.35 + vPhase * 0.4 + vGlow * 0.35);
   color *= 0.8 + vGlow * 0.55;
@@ -81,6 +87,7 @@ uniform float uLevel;
 uniform float uReducedMotion;
 uniform vec3 uPointer;
 uniform float uPointerStrength;
+uniform float uTurbulence;
 
 varying float vPulse;
 varying float vPhase;
@@ -90,7 +97,7 @@ void main() {
   vPhase = aPhase;
   float travel = uReducedMotion > 0.5
     ? fract(aPhase)
-    : fract(aPhase + uTime * (0.2 + uPulseTravel * 0.65) + uLevel * 0.1);
+    : fract(aPhase + uTime * (0.2 + uPulseTravel * 0.65 + uTurbulence * 0.15) + uLevel * 0.1);
   float dist = abs(aAlong - travel);
   dist = min(dist, 1.0 - dist);
   vPulse = uReducedMotion > 0.5
@@ -112,6 +119,7 @@ uniform vec3 uColorB;
 uniform float uCoherence;
 uniform float uLinkIntensity;
 uniform float uPointerStrength;
+uniform float uLayerOpacity;
 
 varying float vPulse;
 varying float vPhase;
@@ -123,7 +131,7 @@ void main() {
     base + vPulse * (0.65 + uLinkIntensity * 0.5) + vPull * uPointerStrength * 0.35,
     0.08,
     0.98
-  );
+  ) * uLayerOpacity;
   vec3 color = mix(uColorB, uColorA, 0.45 + vPhase * 0.3 + vPulse * 0.4);
   color *= 0.9 + vPulse * 0.55 + vPull * uPointerStrength * 0.35;
   float luma = dot(color, vec3(0.299, 0.587, 0.114));

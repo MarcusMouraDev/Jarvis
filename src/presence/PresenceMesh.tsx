@@ -1,7 +1,7 @@
 "use client";
 
-import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { AgentState } from "@/core/types";
 import {
@@ -10,8 +10,16 @@ import {
   hexToRgb,
   lerp,
   lerpColor,
+  resolvePresenceVisual,
+  IDLE_PRESENCE_VISUAL,
+  type PresenceVisual,
 } from "@/state/presence-config";
-import { createNeuralGeometry } from "./neural-geometry";
+import {
+  createLayeredNeuralGeometry,
+  getNeuralProfile,
+  packCombinedEdges,
+  type NeuralLayer,
+} from "./neural-geometry";
 import {
   linkFragmentShader,
   linkVertexShader,
@@ -27,6 +35,95 @@ interface PresenceMeshProps {
   pointerRef: React.RefObject<{ x: number; y: number; active: boolean }>;
 }
 
+const LAYER_SCALE: Record<NeuralLayer, number> = {
+  core: 1.15,
+  cortex: 1,
+  micro: 0.55,
+};
+
+const LAYER_OPACITY: Record<NeuralLayer, number> = {
+  core: 1,
+  cortex: 0.85,
+  micro: 0.45,
+};
+
+function makeNodeUniforms(
+  initial: { colorA: string; colorB: string; activation: number; pulse: number; coherence: number },
+  layer: NeuralLayer,
+) {
+  return {
+    uTime: { value: 0 },
+    uLevel: { value: 0 },
+    uActivation: { value: initial.activation },
+    uPulse: { value: initial.pulse },
+    uCoherence: { value: initial.coherence },
+    uReducedMotion: { value: 0 },
+    uPointer: { value: new THREE.Vector3(0, 0, 1) },
+    uPointerStrength: { value: 0 },
+    uColorA: { value: new THREE.Vector3(...hexToRgb(initial.colorA)) },
+    uColorB: { value: new THREE.Vector3(...hexToRgb(initial.colorB)) },
+    uLayerOpacity: { value: LAYER_OPACITY[layer] },
+    uPointScale: { value: LAYER_SCALE[layer] },
+    uTurbulence: { value: 0.12 },
+  };
+}
+
+function makeLinkUniforms(initial: {
+  colorA: string;
+  colorB: string;
+  pulseTravel: number;
+  linkIntensity: number;
+  coherence: number;
+}) {
+  return {
+    uTime: { value: 0 },
+    uLevel: { value: 0 },
+    uPulseTravel: { value: initial.pulseTravel },
+    uLinkIntensity: { value: initial.linkIntensity },
+    uCoherence: { value: initial.coherence },
+    uReducedMotion: { value: 0 },
+    uPointer: { value: new THREE.Vector3(0, 0, 1) },
+    uPointerStrength: { value: 0 },
+    uColorA: { value: new THREE.Vector3(...hexToRgb(initial.colorA)) },
+    uColorB: { value: new THREE.Vector3(...hexToRgb(initial.colorB)) },
+    uLayerOpacity: { value: 0.9 },
+    uTurbulence: { value: 0.12 },
+  };
+}
+
+function OrbitRings() {
+  const geos = useMemo(() => {
+    return [1.05, 1.22, 1.36].map((r, i) => {
+      const curve = new THREE.EllipseCurve(0, 0, r, r * (0.92 + i * 0.02), 0, Math.PI * 2, false, 0);
+      const pts = curve.getPoints(96);
+      const positions = new Float32Array(pts.length * 3);
+      for (let j = 0; j < pts.length; j += 1) {
+        positions[j * 3] = pts[j].x;
+        positions[j * 3 + 1] = pts[j].y * 0.35;
+        positions[j * 3 + 2] = pts[j].y;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      return g;
+    });
+  }, []);
+
+  return (
+    <group rotation={[0.4, 0.2, 0.15]}>
+      {geos.map((g, i) => (
+        <lineLoop key={i} geometry={g}>
+          <lineBasicMaterial
+            color="#8aa4c4"
+            transparent
+            opacity={0.12 - i * 0.02}
+            depthWrite={false}
+          />
+        </lineLoop>
+      ))}
+    </group>
+  );
+}
+
 export function PresenceMesh({
   state,
   levelRef,
@@ -35,13 +132,28 @@ export function PresenceMesh({
   pointerRef,
 }: PresenceMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const nodeMatRef = useRef<THREE.ShaderMaterial>(null);
-  const linkMatRef = useRef<THREE.ShaderMaterial>(null);
+  const coreMatRef = useRef<THREE.ShaderMaterial>(null);
+  const cortexMatRef = useRef<THREE.ShaderMaterial>(null);
+  const microMatRef = useRef<THREE.ShaderMaterial>(null);
+  const coreLinkMatRef = useRef<THREE.ShaderMaterial>(null);
+  const outerLinkMatRef = useRef<THREE.ShaderMaterial>(null);
   const spring = useRef({ x: 0, y: 0, vx: 0, vy: 0, strength: 0 });
+  const visualRef = useRef<PresenceVisual>(IDLE_PRESENCE_VISUAL);
+  const { invalidate } = useThree();
 
-  const geometry = useMemo(() => createNeuralGeometry(), []);
+  const layered = useMemo(() => {
+    const width =
+      typeof window !== "undefined" ? window.innerWidth : 1280;
+    const dpr =
+      typeof window !== "undefined"
+        ? Math.min(window.devicePixelRatio, 1.75)
+        : 1;
+    return createLayeredNeuralGeometry(
+      getNeuralProfile({ width, dpr, reducedMotion }),
+    );
+  }, [reducedMotion]);
+
   const initial = PRESENCE_BY_STATE.idle;
-
   const current = useRef({
     colorA: hexToRgb(initial.colorA),
     colorB: hexToRgb(initial.colorB),
@@ -50,118 +162,226 @@ export function PresenceMesh({
     linkIntensity: initial.linkIntensity,
     pulseTravel: initial.pulseTravel,
     rotation: initial.rotation,
+    turbulence: initial.turbulence,
+    saturation: 1,
   });
 
-  const nodeGeo = useMemo(() => {
+  const coreGeo = useMemo(() => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(geometry.positions, 3));
-    g.setAttribute("aPhase", new THREE.BufferAttribute(geometry.phases, 1));
+    g.setAttribute("position", new THREE.BufferAttribute(layered.core.positions, 3));
+    g.setAttribute("aPhase", new THREE.BufferAttribute(layered.core.phases, 1));
     return g;
-  }, [geometry]);
+  }, [layered]);
 
-  const linkGeo = useMemo(() => {
+  const cortexGeo = useMemo(() => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute(
-      "position",
-      new THREE.BufferAttribute(geometry.edgePositions, 3),
-    );
-    g.setAttribute(
-      "aPhase",
-      new THREE.BufferAttribute(geometry.edgePhases, 1),
-    );
-    const along = new Float32Array(geometry.edges.length * 2);
-    for (let i = 0; i < geometry.edges.length; i += 1) {
-      along[i * 2] = 0;
-      along[i * 2 + 1] = 1;
+    g.setAttribute("position", new THREE.BufferAttribute(layered.cortex.positions, 3));
+    g.setAttribute("aPhase", new THREE.BufferAttribute(layered.cortex.phases, 1));
+    return g;
+  }, [layered]);
+
+  const microGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(layered.micro.positions, 3));
+    g.setAttribute("aPhase", new THREE.BufferAttribute(layered.micro.phases, 1));
+    return g;
+  }, [layered]);
+
+  const { coreLinkGeo, outerLinkGeo } = useMemo(() => {
+    const packed = packCombinedEdges(layered);
+    const coreEnd = layered.core.points.length;
+    const cortexEnd = coreEnd + layered.cortex.points.length;
+
+    const coreEdges: number[] = [];
+    const outerEdges: number[] = [];
+    const corePhases: number[] = [];
+    const outerPhases: number[] = [];
+    const coreAlong: number[] = [];
+    const outerAlong: number[] = [];
+
+    for (let i = 0; i < layered.edges.length; i += 1) {
+      const e = layered.edges[i];
+      const o = i * 6;
+      const segment = [
+        packed.edgePositions[o],
+        packed.edgePositions[o + 1],
+        packed.edgePositions[o + 2],
+        packed.edgePositions[o + 3],
+        packed.edgePositions[o + 4],
+        packed.edgePositions[o + 5],
+      ];
+      const bothCore = e.a < coreEnd && e.b < coreEnd;
+      const bothOuter = e.a >= cortexEnd || e.b >= cortexEnd;
+      const target = bothCore ? coreEdges : outerEdges;
+      const phases = bothCore ? corePhases : outerPhases;
+      const along = bothCore ? coreAlong : outerAlong;
+      if (!bothCore && !bothOuter && e.a < cortexEnd && e.b < cortexEnd) {
+        // cortex-internal → core family (primary structure)
+        coreEdges.push(...segment);
+        corePhases.push(e.phase, e.phase);
+        coreAlong.push(0, 1);
+        continue;
+      }
+      target.push(...segment);
+      phases.push(e.phase, e.phase);
+      along.push(0, 1);
     }
-    g.setAttribute("aAlong", new THREE.BufferAttribute(along, 1));
-    return g;
-  }, [geometry]);
 
-  const nodeUniforms = useMemo(
-    () => ({
-      uTime: { value: 0 },
-      uLevel: { value: 0 },
-      uActivation: { value: initial.activation },
-      uPulse: { value: initial.pulse },
-      uCoherence: { value: initial.coherence },
-      uReducedMotion: { value: 0 },
-      uPointer: { value: new THREE.Vector3(0, 0, 1) },
-      uPointerStrength: { value: 0 },
-      uColorA: { value: new THREE.Vector3(...hexToRgb(initial.colorA)) },
-      uColorB: { value: new THREE.Vector3(...hexToRgb(initial.colorB)) },
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- create once
+    const mk = (positions: number[], phases: number[], along: number[]) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+      g.setAttribute("aPhase", new THREE.BufferAttribute(new Float32Array(phases), 1));
+      g.setAttribute("aAlong", new THREE.BufferAttribute(new Float32Array(along), 1));
+      return g;
+    };
+
+    return {
+      coreLinkGeo: mk(coreEdges, corePhases, coreAlong),
+      outerLinkGeo: mk(outerEdges, outerPhases, outerAlong),
+    };
+  }, [layered]);
+
+  const coreUniforms = useMemo(() => makeNodeUniforms(initial, "core"), []);
+  const cortexUniforms = useMemo(() => makeNodeUniforms(initial, "cortex"), []);
+  const microUniforms = useMemo(() => makeNodeUniforms(initial, "micro"), []);
+  const coreLinkUniforms = useMemo(() => makeLinkUniforms(initial), []);
+  const outerLinkUniforms = useMemo(
+    () => ({ ...makeLinkUniforms(initial), uLayerOpacity: { value: 0.55 } }),
     [],
   );
 
-  const linkUniforms = useMemo(
-    () => ({
-      uTime: { value: 0 },
-      uLevel: { value: 0 },
-      uPulseTravel: { value: initial.pulseTravel },
-      uLinkIntensity: { value: initial.linkIntensity },
-      uCoherence: { value: initial.coherence },
-      uReducedMotion: { value: 0 },
-      uPointer: { value: new THREE.Vector3(0, 0, 1) },
-      uPointerStrength: { value: 0 },
-      uColorA: { value: new THREE.Vector3(...hexToRgb(initial.colorA)) },
-      uColorB: { value: new THREE.Vector3(...hexToRgb(initial.colorB)) },
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- create once
-    [],
-  );
+  const applyUniforms = (force = false) => {
+    const mats = [
+      coreMatRef.current,
+      cortexMatRef.current,
+      microMatRef.current,
+      coreLinkMatRef.current,
+      outerLinkMatRef.current,
+    ];
+    if (mats.some((m) => !m) && !force) return;
+
+    const nextCfg = PRESENCE_BY_STATE[state];
+    const visual = resolvePresenceVisual(state, visualRef.current);
+    if (state !== "failure") {
+      visualRef.current = visual;
+    } else {
+      visualRef.current = visual;
+    }
+
+    const targetA = hexToRgb(visual.colorA);
+    const targetB = hexToRgb(visual.colorB);
+    const t = reducedMotion || force ? 1 : 0;
+
+    if (t === 1) {
+      current.current.colorA = targetA;
+      current.current.colorB = targetB;
+      current.current.coherence = visual.coherence;
+      current.current.activation = visual.activation;
+      current.current.linkIntensity = nextCfg.linkIntensity;
+      current.current.pulseTravel = nextCfg.pulseTravel;
+      current.current.rotation = nextCfg.rotation;
+      current.current.turbulence = nextCfg.turbulence;
+      current.current.saturation = visual.saturation;
+    }
+
+    const nodeMats = [coreMatRef, cortexMatRef, microMatRef];
+    for (const ref of nodeMats) {
+      const mat = ref.current;
+      if (!mat) continue;
+      mat.uniforms.uColorA.value.set(...current.current.colorA);
+      mat.uniforms.uColorB.value.set(...current.current.colorB);
+      mat.uniforms.uCoherence.value =
+        current.current.coherence * (0.55 + current.current.saturation * 0.45);
+      mat.uniforms.uActivation.value = current.current.activation;
+      mat.uniforms.uPulse.value = nextCfg.pulse;
+      mat.uniforms.uTurbulence.value = current.current.turbulence;
+      mat.uniforms.uReducedMotion.value = reducedMotion ? 1 : 0;
+    }
+    for (const ref of [coreLinkMatRef, outerLinkMatRef]) {
+      const mat = ref.current;
+      if (!mat) continue;
+      mat.uniforms.uColorA.value.set(...current.current.colorA);
+      mat.uniforms.uColorB.value.set(...current.current.colorB);
+      mat.uniforms.uCoherence.value =
+        current.current.coherence * (0.55 + current.current.saturation * 0.45);
+      mat.uniforms.uLinkIntensity.value = current.current.linkIntensity;
+      mat.uniforms.uPulseTravel.value = current.current.pulseTravel;
+      mat.uniforms.uTurbulence.value = current.current.turbulence;
+      mat.uniforms.uReducedMotion.value = reducedMotion ? 1 : 0;
+    }
+  };
+
+  useEffect(() => {
+    applyUniforms(true);
+    invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync on state/motion only
+  }, [state, reducedMotion, invalidate]);
 
   useFrame((_, delta) => {
     if (paused) return;
-    if (!nodeMatRef.current || !linkMatRef.current) return;
-
-    const next = PRESENCE_BY_STATE[state];
-    const t = reducedMotion ? 1 : Math.min(1, delta * STATE_BLEND_RATE);
-
-    if (!next.freezeColor) {
-      current.current.colorA = lerpColor(
-        current.current.colorA,
-        hexToRgb(next.colorA),
-        t,
-      );
-      current.current.colorB = lerpColor(
-        current.current.colorB,
-        hexToRgb(next.colorB),
-        t,
-      );
+    if (
+      !coreMatRef.current ||
+      !cortexMatRef.current ||
+      !microMatRef.current ||
+      !coreLinkMatRef.current ||
+      !outerLinkMatRef.current
+    ) {
+      return;
     }
 
+    const nextCfg = PRESENCE_BY_STATE[state];
+    const visual = resolvePresenceVisual(state, visualRef.current);
+    visualRef.current = visual;
+    const t = reducedMotion ? 1 : Math.min(1, delta * STATE_BLEND_RATE);
+
+    current.current.colorA = lerpColor(
+      current.current.colorA,
+      hexToRgb(visual.colorA),
+      t,
+    );
+    current.current.colorB = lerpColor(
+      current.current.colorB,
+      hexToRgb(visual.colorB),
+      t,
+    );
     current.current.coherence = lerp(
       current.current.coherence,
-      next.coherence,
+      visual.coherence,
       t,
     );
     current.current.activation = lerp(
       current.current.activation,
-      next.activation,
+      visual.activation,
       t,
     );
     current.current.linkIntensity = lerp(
       current.current.linkIntensity,
-      next.linkIntensity,
+      nextCfg.linkIntensity,
       t,
     );
     current.current.pulseTravel = lerp(
       current.current.pulseTravel,
-      next.pulseTravel,
+      nextCfg.pulseTravel,
       t,
     );
     current.current.rotation = lerp(
       current.current.rotation,
-      next.rotation,
+      nextCfg.rotation,
+      t,
+    );
+    current.current.turbulence = lerp(
+      current.current.turbulence,
+      nextCfg.turbulence,
+      t,
+    );
+    current.current.saturation = lerp(
+      current.current.saturation,
+      visual.saturation,
       t,
     );
 
     const level = reducedMotion ? 0 : (levelRef.current ?? 0);
     const rm = reducedMotion ? 1 : 0;
-
-    // Spring toward pointer (manual — avoid motion lib in R3F loop).
     const ptr = pointerRef.current;
     const targetX = !reducedMotion && ptr?.active ? ptr.x : 0;
     const targetY = !reducedMotion && ptr?.active ? ptr.y : 0;
@@ -176,41 +396,61 @@ export function PresenceMesh({
     s.x += s.vx * delta;
     s.y += s.vy * delta;
     s.strength = lerp(s.strength, targetStrength, Math.min(1, delta * 8));
-
     const pointerDir = new THREE.Vector3(s.x, s.y, 0.85).normalize();
 
-    const nu = nodeMatRef.current.uniforms;
-    const lu = linkMatRef.current.uniforms;
+    const syncNode = (mat: THREE.ShaderMaterial) => {
+      const u = mat.uniforms;
+      u.uColorA.value.set(...current.current.colorA);
+      u.uColorB.value.set(...current.current.colorB);
+      u.uCoherence.value =
+        current.current.coherence * (0.55 + current.current.saturation * 0.45);
+      u.uActivation.value = current.current.activation;
+      u.uPulse.value = nextCfg.pulse;
+      u.uLevel.value = level;
+      u.uReducedMotion.value = rm;
+      u.uPointer.value.copy(pointerDir);
+      u.uPointerStrength.value = s.strength;
+      u.uTurbulence.value = current.current.turbulence;
+    };
+    const syncLink = (mat: THREE.ShaderMaterial) => {
+      const u = mat.uniforms;
+      u.uColorA.value.set(...current.current.colorA);
+      u.uColorB.value.set(...current.current.colorB);
+      u.uCoherence.value =
+        current.current.coherence * (0.55 + current.current.saturation * 0.45);
+      u.uLinkIntensity.value = current.current.linkIntensity;
+      u.uPulseTravel.value = current.current.pulseTravel;
+      u.uLevel.value = level;
+      u.uReducedMotion.value = rm;
+      u.uPointer.value.copy(pointerDir);
+      u.uPointerStrength.value = s.strength;
+      u.uTurbulence.value = current.current.turbulence;
+    };
 
-    nu.uColorA.value.set(...current.current.colorA);
-    nu.uColorB.value.set(...current.current.colorB);
-    nu.uCoherence.value = current.current.coherence;
-    nu.uActivation.value = current.current.activation;
-    nu.uPulse.value = next.pulse;
-    nu.uLevel.value = level;
-    nu.uReducedMotion.value = rm;
-    nu.uPointer.value.copy(pointerDir);
-    nu.uPointerStrength.value = s.strength;
-
-    lu.uColorA.value.set(...current.current.colorA);
-    lu.uColorB.value.set(...current.current.colorB);
-    lu.uCoherence.value = current.current.coherence;
-    lu.uLinkIntensity.value = current.current.linkIntensity;
-    lu.uPulseTravel.value = current.current.pulseTravel;
-    lu.uLevel.value = level;
-    lu.uReducedMotion.value = rm;
-    lu.uPointer.value.copy(pointerDir);
-    lu.uPointerStrength.value = s.strength;
+    syncNode(coreMatRef.current);
+    syncNode(cortexMatRef.current);
+    syncNode(microMatRef.current);
+    syncLink(coreLinkMatRef.current);
+    syncLink(outerLinkMatRef.current);
 
     if (!reducedMotion) {
-      const dt = delta * (0.6 + next.pulse);
-      nu.uTime.value += dt;
-      lu.uTime.value += dt;
+      const dt = delta * (0.6 + nextCfg.pulse);
+      for (const mat of [
+        coreMatRef.current,
+        cortexMatRef.current,
+        microMatRef.current,
+        coreLinkMatRef.current,
+        outerLinkMatRef.current,
+      ]) {
+        mat.uniforms.uTime.value += dt;
+      }
       if (groupRef.current) {
         groupRef.current.rotation.y +=
           delta * current.current.rotation * (0.55 + level * 0.5);
         groupRef.current.rotation.x =
-          Math.sin(nu.uTime.value * 0.15) * 0.12 * current.current.rotation +
+          Math.sin(coreMatRef.current.uniforms.uTime.value * 0.15) *
+            0.12 *
+            current.current.rotation +
           s.y * 0.18 * s.strength;
         groupRef.current.rotation.z = -s.x * 0.1 * s.strength;
       }
@@ -219,23 +459,57 @@ export function PresenceMesh({
 
   return (
     <group ref={groupRef}>
-      <points geometry={nodeGeo}>
+      <OrbitRings />
+      <points geometry={coreGeo}>
         <shaderMaterial
-          ref={nodeMatRef}
+          ref={coreMatRef}
           vertexShader={nodeVertexShader}
           fragmentShader={nodeFragmentShader}
-          uniforms={nodeUniforms}
+          uniforms={coreUniforms}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </points>
-      <lineSegments geometry={linkGeo}>
+      <points geometry={cortexGeo}>
         <shaderMaterial
-          ref={linkMatRef}
+          ref={cortexMatRef}
+          vertexShader={nodeVertexShader}
+          fragmentShader={nodeFragmentShader}
+          uniforms={cortexUniforms}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+      <points geometry={microGeo}>
+        <shaderMaterial
+          ref={microMatRef}
+          vertexShader={nodeVertexShader}
+          fragmentShader={nodeFragmentShader}
+          uniforms={microUniforms}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+      <lineSegments geometry={coreLinkGeo}>
+        <shaderMaterial
+          ref={coreLinkMatRef}
           vertexShader={linkVertexShader}
           fragmentShader={linkFragmentShader}
-          uniforms={linkUniforms}
+          uniforms={coreLinkUniforms}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </lineSegments>
+      <lineSegments geometry={outerLinkGeo}>
+        <shaderMaterial
+          ref={outerLinkMatRef}
+          vertexShader={linkVertexShader}
+          fragmentShader={linkFragmentShader}
+          uniforms={outerLinkUniforms}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}

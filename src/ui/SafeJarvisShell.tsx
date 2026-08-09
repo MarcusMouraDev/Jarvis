@@ -13,7 +13,11 @@ import {
   safeCoreFetch,
   streamRunEvents,
 } from "@/lib/safe-core-client";
-import { PRESENCE_BY_STATE } from "@/state/presence-config";
+import {
+  IDLE_PRESENCE_VISUAL,
+  resolvePresenceVisual,
+  type PresenceVisual,
+} from "@/state/presence-config";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useWebGLAvailable } from "@/hooks/use-webgl";
 import { PresenceField } from "@/presence/PresenceField";
@@ -65,10 +69,12 @@ export function SafeJarvisShell() {
   const webglAvailable = useWebGLAvailable();
 
   const runIsActive = busy || isActiveRun(runStatus) || isActiveRun(ui.runStatus);
-  const glow =
-    ui.presence === "failure"
-      ? "#7a8088"
-      : PRESENCE_BY_STATE[ui.presence].colorA;
+  const lastPresenceRef = useRef<PresenceVisual>(IDLE_PRESENCE_VISUAL);
+  const presenceVisual = resolvePresenceVisual(ui.presence, lastPresenceRef.current);
+  if (ui.presence !== "failure") {
+    lastPresenceRef.current = presenceVisual;
+  }
+  const glow = presenceVisual.colorA;
 
   const stopStream = useCallback(() => {
     abortRef.current?.abort();

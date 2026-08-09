@@ -18,6 +18,14 @@ export interface PresenceUniforms {
   pulseTravel: number;
 }
 
+export interface PresenceVisual {
+  colorA: string;
+  colorB: string;
+  saturation: number;
+  coherence: number;
+  activation: number;
+}
+
 export const PRESENCE_BY_STATE: Record<AgentState, PresenceUniforms> = {
   idle: {
     colorA: "#6f93c0",
@@ -80,6 +88,7 @@ export const PRESENCE_BY_STATE: Record<AgentState, PresenceUniforms> = {
     pulseTravel: 0.25,
   },
   failure: {
+    // Catalog values unused as live hue — resolvePresenceVisual keeps previous.
     colorA: "#8a9199",
     colorB: "#3a3f45",
     turbulence: 0.9,
@@ -92,6 +101,41 @@ export const PRESENCE_BY_STATE: Record<AgentState, PresenceUniforms> = {
     pulseTravel: 0.05,
   },
 };
+
+export const IDLE_PRESENCE_VISUAL: PresenceVisual = {
+  colorA: PRESENCE_BY_STATE.idle.colorA,
+  colorB: PRESENCE_BY_STATE.idle.colorB,
+  saturation: 1,
+  coherence: PRESENCE_BY_STATE.idle.coherence,
+  activation: PRESENCE_BY_STATE.idle.activation,
+};
+
+/**
+ * Resolve display colors for a state transition.
+ * failure: keep previous hue, reduce saturation/activation — never invent a gray glow.
+ */
+export function resolvePresenceVisual(
+  state: AgentState,
+  previous: PresenceVisual,
+): PresenceVisual {
+  if (state === "failure") {
+    return {
+      colorA: previous.colorA,
+      colorB: previous.colorB,
+      saturation: Math.min(previous.saturation, 0.35),
+      coherence: PRESENCE_BY_STATE.failure.coherence,
+      activation: PRESENCE_BY_STATE.failure.activation,
+    };
+  }
+  const next = PRESENCE_BY_STATE[state];
+  return {
+    colorA: next.colorA,
+    colorB: next.colorB,
+    saturation: 1,
+    coherence: next.coherence,
+    activation: next.activation,
+  };
+}
 
 /** ~600ms transition at 60fps with this rate. */
 export const STATE_BLEND_RATE = 1 / 0.6;

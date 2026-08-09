@@ -16,7 +16,11 @@ import {
   decideShellApproval,
   streamShell,
 } from "@/lib/shell-client";
-import { PRESENCE_BY_STATE } from "@/state/presence-config";
+import {
+  IDLE_PRESENCE_VISUAL,
+  resolvePresenceVisual,
+  type PresenceVisual,
+} from "@/state/presence-config";
 import { AgentStateMachine } from "@/state/agent-state";
 import { useAudioLevel } from "@/audio/use-audio-level";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
@@ -103,10 +107,12 @@ export function JarvisShell() {
     enabled: !reducedMotion,
   });
 
-  const glow =
-    state === "failure"
-      ? "#7a8088"
-      : PRESENCE_BY_STATE[state].colorA;
+  const lastPresenceRef = useRef<PresenceVisual>(IDLE_PRESENCE_VISUAL);
+  const presenceVisual = resolvePresenceVisual(state, lastPresenceRef.current);
+  if (state !== "failure") {
+    lastPresenceRef.current = presenceVisual;
+  }
+  const glow = presenceVisual.colorA;
   const panelOpen = historyOpen || memoryOpen || terminalOpen || paletteOpen;
 
   const go = useCallback(

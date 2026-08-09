@@ -12,13 +12,21 @@ interface PresenceCanvasProps {
   paused: boolean;
 }
 
-function VisibilityGate({ paused }: { paused: boolean }) {
+function VisibilityGate({
+  paused,
+  state,
+  reducedMotion,
+}: {
+  paused: boolean;
+  state: AgentState;
+  reducedMotion: boolean;
+}) {
   const { invalidate, set, gl } = useThree();
   useEffect(() => {
     gl.setClearColor(0x000000, 0);
-    set({ frameloop: paused ? "never" : "always" });
-    if (!paused) invalidate();
-  }, [paused, invalidate, set, gl]);
+    set({ frameloop: paused ? "never" : reducedMotion ? "demand" : "always" });
+    invalidate();
+  }, [paused, reducedMotion, state, invalidate, set, gl]);
   return null;
 }
 
@@ -77,7 +85,11 @@ export function PresenceCanvas({
           gl.setClearColor(0x000000, 0);
         }}
       >
-        <VisibilityGate paused={stopLoop} />
+        <VisibilityGate
+          paused={paused}
+          state={state}
+          reducedMotion={reducedMotion}
+        />
         <Suspense fallback={null}>
           <PresenceMesh
             state={state}

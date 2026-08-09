@@ -1,23 +1,26 @@
 @import "tailwindcss";
 
-/* Hallmark · macrostructure: Workbench · tone: atmospheric · anchor hue: 250
- * theme: Jarvis V22 · depth layers · pointer attraction · command palette
+/* Jarvis V24 · workbench · atmospheric · anchor hue 252
+ * shared tokens for JarvisShell + SafeJarvisShell
  */
 
 @theme {
-  --color-surface-0: oklch(0.11 0.028 252);
-  --color-surface-1: oklch(0.15 0.03 252);
-  --color-surface-2: oklch(0.19 0.03 252);
-  --color-surface-3: oklch(0.23 0.032 252);
+  --color-surface-0: oklch(0.105 0.028 252);
+  --color-surface-1: oklch(0.155 0.032 252);
+  --color-surface-2: oklch(0.215 0.035 252);
+  --color-surface-3: oklch(0.285 0.038 252);
   --color-accent: oklch(0.62 0.18 250);
-  --color-text: oklch(0.95 0.01 250);
-  --color-muted: oklch(0.62 0.02 250);
-  --color-border: oklch(0.26 0.025 252);
-  --color-fg: oklch(0.95 0.01 250);
-  --color-surface: oklch(0.15 0.03 252);
-  --color-ink-0: oklch(0.95 0.01 250);
-  --color-ink-1: oklch(0.78 0.02 250);
-  --color-ink-2: oklch(0.62 0.02 250);
+  --color-text: oklch(0.97 0.012 250);
+  --color-muted: oklch(0.70 0.025 250);
+  --color-border: oklch(0.34 0.035 252);
+  --color-fg: oklch(0.97 0.012 250);
+  --color-surface: oklch(0.155 0.032 252);
+  --color-ink-0: oklch(0.97 0.012 250);
+  --color-ink-1: oklch(0.82 0.025 250);
+  --color-ink-2: oklch(0.70 0.025 250);
+  --focus-ring: oklch(0.82 0.16 205);
+  --state-danger: oklch(0.72 0.18 25);
+  --state-success: oklch(0.80 0.13 175);
   --color-accent-listen: oklch(0.62 0.18 250);
   --color-accent-think: oklch(0.72 0.16 55);
   --color-accent-ask: oklch(0.62 0.2 25);
@@ -54,7 +57,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid oklch(0.62 0.18 250);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }

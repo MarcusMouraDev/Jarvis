@@ -1,8 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { openCoreStore } from "@/core/core-store";
+import { getSafeCoreRuntime } from "@/core/safe-core-runtime";
+import {
+  jsonNoStore,
+  readJsonBody,
+  safeRouteError,
+} from "@/core/safe-route-response";
 import {
   SESSION_COOKIE_NAME,
+  requireProtectedRequest,
   validateLoopbackRequest,
 } from "@/core/session-security";
 import { isSafeAgentCoreEnabled } from "@/integrations/flags";
@@ -47,4 +54,22 @@ export async function GET(request: Request) {
     }`,
   );
   return response;
+}
+
+export async function PATCH(request: Request) {
+  if (!isSafeAgentCoreEnabled()) {
+    return jsonNoStore({ error: "safe_core_disabled" }, { status: 404 });
+  }
+  const core = getSafeCoreRuntime();
+  const auth = requireProtectedRequest(request, { store: core.store });
+  if (!auth.ok) return auth.response;
+  try {
+    const updated = core.service.updateDefaultAgent(
+      auth.session,
+      await readJsonBody(request),
+    );
+    return jsonNoStore({ defaultAgentId: updated.defaultAgentId });
+  } catch (error) {
+    return safeRouteError(error);
+  }
 }

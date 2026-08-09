@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   lstatSync,
@@ -20,6 +21,7 @@ import { closeCoreStore, CoreStore, openCoreStore } from "./core-store";
 import {
   SafeToolGateway,
   type SafeProcessExecutor,
+  type SafeToolFileSystem,
 } from "./tool-gateway";
 
 const sha256 = (value: string) =>
@@ -154,6 +156,11 @@ describe("safe tool gateway", () => {
     { program: "wc", args: ["--files0-from=/etc/passwd"] },
     { program: "rg", args: ["x", ">", "out"] },
     { program: "rg", args: ["--pre", "arbitrary-program", "x"] },
+    { program: "rg", args: ["-L", "TOKEN", "."] },
+    { program: "rg", args: ["--follow", "TOKEN", "."] },
+    { program: "rg", args: ["-f", "patterns.txt", "."] },
+    { program: "rg", args: ["--file=patterns.txt", "."] },
+    { program: "rg", args: ["--ignore-file", "ignore.txt", "TOKEN", "."] },
     { program: "rg", args: ["--hidden", "TOKEN", "."] },
     { program: "git", args: ["status", "--output=result"] },
     { program: "git", args: ["branch", "new-branch"] },
@@ -170,11 +177,44 @@ describe("safe tool gateway", () => {
   });
 
   it.each([
+    { program: "ls", args: ["linked-secret"] },
+    { program: "cat", args: ["linked-secret"] },
+    { program: "head", args: ["linked-secret"] },
+    { program: "tail", args: ["linked-secret"] },
+    { program: "wc", args: ["linked-secret"] },
+    { program: "rg", args: ["outside-secret", "linked-secret"] },
+  ])("rejects $program file operands that are workspace symlinks", async (input) => {
+    const secret = "outside-secret-contents";
+    const outsidePath = path.join(projectsRoot, "outside-secret.txt");
+    writeFileSync(outsidePath, secret);
+    symlinkSync(outsidePath, path.join(workspace, "linked-secret"));
+
+    await expect(
+      gateway({ execute: undefined }).invoke({
+        sessionId: "session-1",
+        runId: "run-1",
+        toolId: "terminal.read",
+        input,
+      }),
+    ).rejects.toThrow("unsafe_terminal_read");
+    const persisted = store
+      .getDatabaseForTests()
+      .prepare("SELECT output_json FROM tool_invocations")
+      .all();
+    expect(JSON.stringify(persisted)).not.toContain(secret);
+  });
+
+  it.each([
+    { program: "git", args: ["add", "README.md"] },
+    { program: "git", args: ["commit", "-m", "message"] },
+    { program: "git", args: ["commit", "--amend", "--no-edit"] },
     { program: "git", args: ["push"] },
     { program: "git", args: ["reset", "--hard"] },
     { program: "git", args: ["clean", "-fd"] },
     { program: "git", args: ["checkout", "."] },
     { program: "rm", args: ["-rf", "."] },
+    { program: "pnpm", args: ["run", "test"], script: "test" },
+    { program: "yarn", args: ["run", "test"], script: "test" },
     { program: "npm", args: ["run", "missing"], script: "missing" },
   ])("denies destructive or non-enumerated run input %#", async (input) => {
     await expect(
@@ -208,7 +248,7 @@ describe("safe tool gateway", () => {
       runId: "run-1",
       invocationId: result.invocationId,
       toolId: "terminal.run",
-      toolVersion: "1.0.0",
+      toolVersion: "1.1.0",
     });
     expect(() =>
       store
@@ -264,6 +304,13 @@ describe("safe tool gateway", () => {
       output: { stdout: "ok" },
     });
     expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        program: "npm",
+        args: ["run", "test", "--ignore-scripts"],
+        shell: false,
+      }),
+    );
     expect(store.getSafeApproval(result.approvalId)?.status).toBe("consumed");
     await expect(
       gateway().resume({
@@ -402,6 +449,89 @@ describe("safe tool gateway", () => {
         runId: "run-1",
         invocationId: pending.result.invocationId,
         input: pending.input,
+      }),
+    ).rejects.toThrow("approval_binding_mismatch");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("suppresses npm lifecycle hooks while running the approved script", async () => {
+    writeFileSync(
+      path.join(workspace, "package.json"),
+      JSON.stringify({
+        scripts: {
+          pretest: "node -e \"require('node:fs').writeFileSync('pre-ran', 'yes')\"",
+          test: "node -e \"require('node:fs').writeFileSync('test-ran', 'yes')\"",
+          posttest: "node -e \"require('node:fs').writeFileSync('post-ran', 'yes')\"",
+        },
+      }),
+    );
+    const realGateway = gateway({ execute: undefined });
+    const input = { program: "npm", args: ["run", "test"], script: "test" };
+    const pending = await realGateway.invoke({
+      sessionId: "session-1",
+      runId: "run-1",
+      toolId: "terminal.run",
+      input,
+    });
+    if (pending.status !== "approval_required") throw new Error("expected approval");
+    realGateway.decideApproval({
+      approvalId: pending.approvalId,
+      sessionId: "session-1",
+      decision: "approved",
+    });
+
+    await realGateway.resume({
+      sessionId: "session-1",
+      runId: "run-1",
+      invocationId: pending.invocationId,
+      input,
+    });
+
+    expect(existsSync(path.join(workspace, "test-ran"))).toBe(true);
+    expect(existsSync(path.join(workspace, "pre-ran"))).toBe(false);
+    expect(existsSync(path.join(workspace, "post-ran"))).toBe(false);
+  });
+
+  it("revalidates the selected script immediately before process launch", async () => {
+    let packageReads = 0;
+    const injectedFileSystem: SafeToolFileSystem = {
+      readFile: (filePath) => {
+        const content = readFileSync(filePath);
+        if (filePath === path.join(workspace, "package.json") && ++packageReads === 2) {
+          writeFileSync(
+            filePath,
+            JSON.stringify({ scripts: { test: "node changed-command.js" } }),
+          );
+        }
+        return content;
+      },
+      lstat: (filePath) => lstatSync(filePath),
+      mkdir: (directoryPath, options) => mkdirSync(directoryPath, options),
+      writeFile: (filePath, value, options) => writeFileSync(filePath, value, options),
+      rename: (from, to) => renameSync(from, to),
+      unlink: (filePath) => unlinkSync(filePath),
+    };
+    const exactGateway = gateway({ fileSystem: injectedFileSystem });
+    const input = { program: "npm", args: ["run", "test"], script: "test" };
+    const pending = await exactGateway.invoke({
+      sessionId: "session-1",
+      runId: "run-1",
+      toolId: "terminal.run",
+      input,
+    });
+    if (pending.status !== "approval_required") throw new Error("expected approval");
+    exactGateway.decideApproval({
+      approvalId: pending.approvalId,
+      sessionId: "session-1",
+      decision: "approved",
+    });
+
+    await expect(
+      exactGateway.resume({
+        sessionId: "session-1",
+        runId: "run-1",
+        invocationId: pending.invocationId,
+        input,
       }),
     ).rejects.toThrow("approval_binding_mismatch");
     expect(execute).not.toHaveBeenCalled();

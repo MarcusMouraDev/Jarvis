@@ -254,38 +254,170 @@ function assertNoUnsafeArg(arg: string): void {
   }
 }
 
-function assertTerminalRead(program: string, args: string[]): void {
+interface TerminalReadCommand {
+  program: string;
+  args: string[];
+}
+
+function resolveTerminalReadOperand(
+  root: string,
+  operand: string,
+  fs: SafeToolFileSystem,
+  fileOnly: boolean,
+): string {
+  if (operand === ".") {
+    const status = fs.lstat(root);
+    if (status.isSymbolicLink() || !status.isDirectory()) fail("unsafe_terminal_read");
+    return root;
+  }
+  const resolved = resolveSafePath(root, operand, fs, false);
+  const status = fs.lstat(resolved);
+  if (status.isSymbolicLink() || (fileOnly && !status.isFile())) {
+    fail("unsafe_terminal_read");
+  }
+  return resolved;
+}
+
+function prepareTerminalReadCommand(
+  root: string,
+  input: TerminalReadCommand,
+  fs: SafeToolFileSystem,
+): TerminalReadCommand {
+  const { program, args } = input;
   if (program.includes("/") || program.includes("\\")) fail("unsafe_terminal_read");
   try {
     args.forEach(assertNoUnsafeArg);
+
+    if (program === "pwd" && args.length === 0) return { program, args };
+    if (program === "git") {
+      const statusOptions = new Set([
+        "--short",
+        "--branch",
+        "--porcelain",
+        "--porcelain=v1",
+        "--porcelain=v2",
+        "--untracked-files=no",
+        "--untracked-files=normal",
+        "--untracked-files=all",
+        "-s",
+        "-b",
+        "-sb",
+      ]);
+      if (
+        args[0] === "status" &&
+        args.slice(1).every((argument) => statusOptions.has(argument))
+      ) {
+        return { program, args };
+      }
+      if (
+        args[0] === "branch" &&
+        (args.length === 1 ||
+          (args.length === 2 && ["--list", "--show-current"].includes(args[1])))
+      ) {
+        return { program, args };
+      }
+      fail("unsafe_terminal_read");
+    }
+
+    if (program === "ls") {
+      const optionCount = args.findIndex((argument) => !/^-[1ahl]+$/.test(argument));
+      const splitAt = optionCount === -1 ? args.length : optionCount;
+      const options = args.slice(0, splitAt);
+      const operands = args.slice(splitAt);
+      if (operands.some((operand) => operand.startsWith("-"))) fail("unsafe_terminal_read");
+      const resolved = (operands.length ? operands : ["."]).map((operand) =>
+        resolveTerminalReadOperand(root, operand, fs, false),
+      );
+      return { program, args: [...options, ...resolved] };
+    }
+
+    if (program === "cat") {
+      if (!args.length || args.some((operand) => operand.startsWith("-"))) {
+        fail("unsafe_terminal_read");
+      }
+      return {
+        program,
+        args: args.map((operand) => resolveTerminalReadOperand(root, operand, fs, true)),
+      };
+    }
+
+    if (program === "head" || program === "tail") {
+      let operandIndex = 0;
+      const options: string[] = [];
+      if (args[0] === "-n" && /^[1-9]\d*$/.test(args[1] ?? "")) {
+        options.push(args[0], args[1]);
+        operandIndex = 2;
+      } else if (/^(?:-n|--lines=)[1-9]\d*$/.test(args[0] ?? "")) {
+        options.push(args[0]);
+        operandIndex = 1;
+      }
+      const operands = args.slice(operandIndex);
+      if (!operands.length || operands.some((operand) => operand.startsWith("-"))) {
+        fail("unsafe_terminal_read");
+      }
+      return {
+        program,
+        args: [
+          ...options,
+          ...operands.map((operand) => resolveTerminalReadOperand(root, operand, fs, true)),
+        ],
+      };
+    }
+
+    if (program === "wc") {
+      const optionCount = args.findIndex((argument) => !/^-[clmw]+$/.test(argument));
+      const splitAt = optionCount === -1 ? args.length : optionCount;
+      const options = args.slice(0, splitAt);
+      const operands = args.slice(splitAt);
+      if (!operands.length || operands.some((operand) => operand.startsWith("-"))) {
+        fail("unsafe_terminal_read");
+      }
+      return {
+        program,
+        args: [
+          ...options,
+          ...operands.map((operand) => resolveTerminalReadOperand(root, operand, fs, true)),
+        ],
+      };
+    }
+
+    if (program === "rg") {
+      const allowedOptions = new Set([
+        "-n",
+        "--line-number",
+        "-i",
+        "--ignore-case",
+        "-F",
+        "--fixed-strings",
+        "-w",
+        "--word-regexp",
+        "-x",
+        "--line-regexp",
+        "-l",
+        "--files-with-matches",
+        "-c",
+        "--count",
+        "--json",
+        "--heading",
+        "--no-heading",
+        "--color=never",
+      ]);
+      const optionCount = args.findIndex((argument) => !allowedOptions.has(argument));
+      const splitAt = optionCount === -1 ? args.length : optionCount;
+      const options = args.slice(0, splitAt);
+      const pattern = args[splitAt];
+      const operands = args.slice(splitAt + 1);
+      if (!pattern || pattern.startsWith("-") || operands.some((operand) => operand.startsWith("-"))) {
+        fail("unsafe_terminal_read");
+      }
+      const resolved = (operands.length ? operands : ["."]).map((operand) =>
+        resolveTerminalReadOperand(root, operand, fs, false),
+      );
+      return { program, args: [...options, pattern, ...resolved] };
+    }
   } catch {
     fail("unsafe_terminal_read");
   }
-  if (program === "pwd" && args.length === 0) return;
-  if (program === "git") {
-    if (args[0] === "status" && args.length > 0) return;
-    if (
-      args[0] === "branch" &&
-      (args.length === 1 ||
-        (args.length === 2 && ["--list", "--show-current"].includes(args[1])))
-    ) return;
-    fail("unsafe_terminal_read");
-  }
-  if (["ls", "cat", "head", "tail", "wc"].includes(program) && args.length > 0) return;
-  if (
-    program === "rg" &&
-    args.length > 0 &&
-    !args.some(
-      (arg) =>
-        arg.startsWith("--pre") ||
-        arg.startsWith("--hostname-bin") ||
-        arg.startsWith("--search-zip") ||
-        arg.startsWith("--engine") ||
-        arg === "--hidden" ||
-        arg.startsWith("--no-ignore") ||
-        /^-u{1,3}$/.test(arg),
-    )
-  ) return;
   fail("unsafe_terminal_read");
 }
 
@@ -312,14 +444,14 @@ function assertTerminalRun(
   root: string,
   input: { program: string; args: string[]; script?: string },
   fs: SafeToolFileSystem,
-): { networkCapable: boolean; scriptCommand?: string; scriptDigest?: string } {
+): { networkCapable: true; scriptCommand: string; scriptDigest: string } {
   if (input.program.includes("/") || input.program.includes("\\")) fail("unsafe_terminal_run");
   try {
     input.args.forEach(assertNoUnsafeArg);
   } catch {
     fail("unsafe_terminal_run");
   }
-  if (["npm", "pnpm", "yarn"].includes(input.program)) {
+  if (input.program === "npm") {
     const scripts = loadProjectScripts(root, fs);
     if (
       !input.script ||
@@ -335,15 +467,6 @@ function assertTerminalRun(
       scriptCommand: scripts[input.script],
       scriptDigest: textDigest(scripts[input.script]),
     };
-  }
-  if (input.program === "git") {
-    if (!input.args.length || !["add", "commit"].includes(input.args[0])) {
-      fail("unsafe_terminal_run");
-    }
-    if (input.args.some((arg) => ["push", "reset", "clean", "checkout", "restore"].includes(arg))) {
-      fail("unsafe_terminal_run");
-    }
-    return { networkCapable: false };
   }
   fail("unsafe_terminal_run");
 }
@@ -722,19 +845,25 @@ export class SafeToolGateway {
 
   private prepareTerminalRead(root: string, input: JsonValue, manifest: SafeToolManifest): PreparedTool {
     const parsed = input as { program: string; args: string[] };
-    assertTerminalRead(parsed.program, parsed.args);
+    const command = prepareTerminalReadCommand(root, parsed, this.fs);
     return {
       input,
       effect: { kind: "terminal_read", program: parsed.program, args: parsed.args },
       preview: { kind: "terminal_read", program: parsed.program, args: parsed.args },
-      run: () => this.execute({
-        ...parsed,
-        cwd: root,
-        env: { ...processEnvironment(), GIT_OPTIONAL_LOCKS: "0" },
-        timeoutMs: manifest.timeoutMs,
-        maxOutputBytes: manifest.maxOutputBytes,
-        shell: false,
-      }),
+      run: () => {
+        const revalidated = prepareTerminalReadCommand(root, parsed, this.fs);
+        if (stableJson(toJsonValue(revalidated)) !== stableJson(toJsonValue(command))) {
+          fail("unsafe_terminal_read");
+        }
+        return this.execute({
+          ...revalidated,
+          cwd: root,
+          env: { ...processEnvironment(), GIT_OPTIONAL_LOCKS: "0" },
+          timeoutMs: manifest.timeoutMs,
+          maxOutputBytes: manifest.maxOutputBytes,
+          shell: false,
+        });
+      },
     };
   }
 
@@ -745,10 +874,11 @@ export class SafeToolGateway {
       parsed,
       this.fs,
     );
+    const executionArgs = ["run", parsed.script!, "--ignore-scripts"];
     const effectDetails = {
       kind: "terminal_run",
       program: parsed.program,
-      args: parsed.args,
+      args: executionArgs,
       script: parsed.script,
       scriptDigest,
       networkCapable,
@@ -761,15 +891,30 @@ export class SafeToolGateway {
         ...effectDetails,
         ...(scriptCommand ? { scriptCommand: redactSecrets(scriptCommand) } : {}),
       }),
-      run: () => this.execute({
-        program: parsed.program,
-        args: parsed.args,
-        cwd: root,
-        env: processEnvironment(),
-        timeoutMs: manifest.timeoutMs,
-        maxOutputBytes: manifest.maxOutputBytes,
-        shell: false,
-      }),
+      run: () => {
+        let revalidated: ReturnType<typeof assertTerminalRun>;
+        try {
+          revalidated = assertTerminalRun(root, parsed, this.fs);
+        } catch (error) {
+          if (error && typeof error === "object") Object.assign(error, { effectStarted: false });
+          throw error;
+        }
+        if (
+          revalidated.scriptCommand !== scriptCommand ||
+          revalidated.scriptDigest !== scriptDigest
+        ) {
+          throw Object.assign(new Error("approval_binding_mismatch"), { effectStarted: false });
+        }
+        return this.execute({
+          program: "npm",
+          args: executionArgs,
+          cwd: root,
+          env: { ...processEnvironment(), npm_config_ignore_scripts: "true" },
+          timeoutMs: manifest.timeoutMs,
+          maxOutputBytes: manifest.maxOutputBytes,
+          shell: false,
+        });
+      },
     };
   }
 

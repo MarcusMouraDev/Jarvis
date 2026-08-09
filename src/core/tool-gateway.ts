@@ -21,6 +21,14 @@ import {
 
 const APPROVAL_TTL_MS = 10 * 60 * 1000;
 const SCRIPT_RUNNER = "/bin/sh";
+const SCRIPT_SYSTEM_PATH = [
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  "/usr/bin",
+  "/bin",
+  "/usr/sbin",
+  "/sbin",
+] as const;
 const EMPTY_SHA256 = createHash("sha256").update("").digest("hex");
 const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const META = /[;&|><`$()\\\r\n]/;
@@ -445,6 +453,56 @@ function loadProjectScripts(root: string, fs: SafeToolFileSystem): Record<string
   return Object.fromEntries(entries) as Record<string, string>;
 }
 
+interface ProjectScriptEnvironment {
+  values: NodeJS.ProcessEnv;
+  contract: {
+    path: string[];
+    variables: Record<string, string>;
+    sha256: string;
+  };
+}
+
+function prepareProjectScriptEnvironment(
+  root: string,
+  script: string,
+  fs: SafeToolFileSystem,
+): ProjectScriptEnvironment {
+  const localBin = resolveSafePath(root, "node_modules/.bin", fs, true);
+  try {
+    const status = fs.lstat(localBin);
+    if (status.isSymbolicLink() || !status.isDirectory()) fail("unsafe_terminal_run");
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+  }
+  const packagePath = resolveSafePath(root, "package.json", fs, false);
+  const variables = {
+    INIT_CWD: root,
+    LANG: "C",
+    LC_ALL: "C",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    npm_lifecycle_event: script,
+    npm_package_json: packagePath,
+  };
+  const values = {
+    PATH: [localBin, ...SCRIPT_SYSTEM_PATH].join(path.delimiter),
+    ...variables,
+  } as unknown as NodeJS.ProcessEnv;
+  return {
+    values,
+    contract: {
+      path: ["<workspace>/node_modules/.bin", ...SCRIPT_SYSTEM_PATH],
+      variables: {
+        ...variables,
+        INIT_CWD: "<workspace>",
+        npm_package_json: "<workspace>/package.json",
+      },
+      sha256: digest(toJsonValue(values)),
+    },
+  };
+}
+
 function assertTerminalRun(
   root: string,
   input: { program: string; args: string[]; script?: string },
@@ -454,6 +512,7 @@ function assertTerminalRun(
   scriptCommand: string;
   scriptDigest: string;
   runner: { program: string; args: string[]; sha256: string; nonLogin: true };
+  environment: ProjectScriptEnvironment;
 } {
   if (input.program.includes("/") || input.program.includes("\\")) fail("unsafe_terminal_run");
   try {
@@ -472,16 +531,19 @@ function assertTerminalRun(
     ) {
       fail("unsafe_terminal_run");
     }
+    const runner = {
+      program: SCRIPT_RUNNER,
+      args: ["-c"],
+      sha256: bufferDigest(fs.readFile(SCRIPT_RUNNER)),
+      nonLogin: true as const,
+    };
+    const environment = prepareProjectScriptEnvironment(root, input.script, fs);
     return {
       networkCapable: true,
       scriptCommand: scripts[input.script],
       scriptDigest: textDigest(scripts[input.script]),
-      runner: {
-        program: SCRIPT_RUNNER,
-        args: ["-c"],
-        sha256: bufferDigest(fs.readFile(SCRIPT_RUNNER)),
-        nonLogin: true,
-      },
+      runner,
+      environment,
     };
   }
   fail("unsafe_terminal_run");
@@ -902,11 +964,8 @@ export class SafeToolGateway {
 
   private prepareTerminalRun(root: string, input: JsonValue, manifest: SafeToolManifest): PreparedTool {
     const parsed = input as { program: string; args: string[]; script?: string };
-    const { networkCapable, scriptCommand, scriptDigest, runner } = assertTerminalRun(
-      root,
-      parsed,
-      this.fs,
-    );
+    const { networkCapable, scriptCommand, scriptDigest, runner, environment } =
+      assertTerminalRun(root, parsed, this.fs);
     const effectDetails = {
       kind: "terminal_run",
       program: parsed.program,
@@ -915,6 +974,7 @@ export class SafeToolGateway {
       scriptDigest,
       networkCapable,
       runner,
+      environment: environment.contract,
     };
     const effect = toJsonValue(effectDetails);
     return {
@@ -935,7 +995,9 @@ export class SafeToolGateway {
         if (
           revalidated.scriptCommand !== scriptCommand ||
           revalidated.scriptDigest !== scriptDigest ||
-          stableJson(toJsonValue(revalidated.runner)) !== stableJson(toJsonValue(runner))
+          stableJson(toJsonValue(revalidated.runner)) !== stableJson(toJsonValue(runner)) ||
+          stableJson(toJsonValue(revalidated.environment.contract)) !==
+            stableJson(toJsonValue(environment.contract))
         ) {
           throw Object.assign(new Error("approval_binding_mismatch"), { effectStarted: false });
         }
@@ -943,7 +1005,7 @@ export class SafeToolGateway {
           program: runner.program,
           args: [...runner.args, scriptCommand],
           cwd: root,
-          env: processEnvironment(),
+          env: revalidated.environment.values,
           timeoutMs: manifest.timeoutMs,
           maxOutputBytes: manifest.maxOutputBytes,
           shell: false,

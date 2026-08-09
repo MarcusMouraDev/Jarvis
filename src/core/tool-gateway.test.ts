@@ -282,6 +282,25 @@ describe("safe tool gateway", () => {
           sha256: sha256(readFileSync("/bin/sh")),
           nonLogin: true,
         },
+        environment: {
+          path: [
+            "<workspace>/node_modules/.bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+          ],
+          variables: {
+            INIT_CWD: "<workspace>",
+            LANG: "C",
+            LC_ALL: "C",
+            npm_lifecycle_event: "test",
+            npm_package_json: "<workspace>/package.json",
+          },
+          sha256: expect.stringMatching(/^[a-f\d]{64}$/),
+        },
       },
     });
     expect(execute).not.toHaveBeenCalled();
@@ -291,7 +310,7 @@ describe("safe tool gateway", () => {
       runId: "run-1",
       invocationId: result.invocationId,
       toolId: "terminal.run",
-      toolVersion: "1.2.0",
+      toolVersion: "1.3.0",
     });
     expect(() =>
       store
@@ -570,6 +589,115 @@ describe("safe tool gateway", () => {
 
     expect(readFileSync(path.join(workspace, "approved-ran"), "utf8")).toBe("approved");
     expect(existsSync(path.join(workspace, "evil-ran"))).toBe(false);
+  });
+
+  it("resolves workspace-local binaries without consulting ambient PATH", async () => {
+    const localBin = path.join(workspace, "node_modules", ".bin");
+    const ambientBin = path.join(projectsRoot, "ambient-bin");
+    mkdirSync(localBin, { recursive: true });
+    mkdirSync(ambientBin);
+    writeFileSync(
+      path.join(localBin, "local-tool"),
+      [
+        "#!/bin/sh",
+        "printf '%s\\n' workspace \"$npm_lifecycle_event\" \"$npm_package_json\" \"$INIT_CWD\" > local-ran",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(path.join(localBin, "local-tool"), 0o755);
+    writeFileSync(
+      path.join(ambientBin, "local-tool"),
+      "#!/bin/sh\nprintf ambient > ambient-ran\n",
+    );
+    chmodSync(path.join(ambientBin, "local-tool"), 0o755);
+    writeFileSync(
+      path.join(workspace, "package.json"),
+      JSON.stringify({ scripts: { test: "local-tool" } }),
+    );
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${ambientBin}${path.delimiter}${originalPath ?? ""}`;
+
+    try {
+      const realGateway = gateway({ execute: undefined });
+      const input = { program: "npm", args: ["run", "test"], script: "test" };
+      const pending = await realGateway.invoke({
+        sessionId: "session-1",
+        runId: "run-1",
+        toolId: "terminal.run",
+        input,
+      });
+      if (pending.status !== "approval_required") throw new Error("expected approval");
+      realGateway.decideApproval({
+        approvalId: pending.approvalId,
+        sessionId: "session-1",
+        decision: "approved",
+      });
+
+      const completed = await realGateway.resume({
+        sessionId: "session-1",
+        runId: "run-1",
+        invocationId: pending.invocationId,
+        input,
+      });
+
+      expect(completed).toMatchObject({ status: "completed", output: { exitCode: 0 } });
+      expect(readFileSync(path.join(workspace, "local-ran"), "utf8")).toBe(
+        ["workspace", "test", path.join(workspace, "package.json"), workspace, ""].join("\n"),
+      );
+      expect(existsSync(path.join(workspace, "ambient-ran"))).toBe(false);
+      expect(existsSync(path.join(ambientBin, "ambient-ran"))).toBe(false);
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+
+  it("revalidates the workspace binary directory immediately before launch", async () => {
+    const localBin = path.join(workspace, "node_modules", ".bin");
+    const movedBin = path.join(workspace, "node_modules", ".bin-original");
+    const outsideBin = path.join(projectsRoot, "outside-bin");
+    mkdirSync(localBin, { recursive: true });
+    mkdirSync(outsideBin);
+    let runnerReads = 0;
+    const injectedFileSystem: SafeToolFileSystem = {
+      readFile: (filePath) => {
+        const content = readFileSync(filePath);
+        if (filePath === "/bin/sh" && ++runnerReads === 3) {
+          renameSync(localBin, movedBin);
+          symlinkSync(outsideBin, localBin);
+        }
+        return content;
+      },
+      lstat: (filePath) => lstatSync(filePath),
+      mkdir: (directoryPath, options) => mkdirSync(directoryPath, options),
+      writeFile: (filePath, value, options) => writeFileSync(filePath, value, options),
+      rename: (from, to) => renameSync(from, to),
+      unlink: (filePath) => unlinkSync(filePath),
+    };
+    const exactGateway = gateway({ fileSystem: injectedFileSystem });
+    const input = { program: "npm", args: ["run", "test"], script: "test" };
+    const pending = await exactGateway.invoke({
+      sessionId: "session-1",
+      runId: "run-1",
+      toolId: "terminal.run",
+      input,
+    });
+    if (pending.status !== "approval_required") throw new Error("expected approval");
+    exactGateway.decideApproval({
+      approvalId: pending.approvalId,
+      sessionId: "session-1",
+      decision: "approved",
+    });
+
+    await expect(
+      exactGateway.resume({
+        sessionId: "session-1",
+        runId: "run-1",
+        invocationId: pending.invocationId,
+        input,
+      }),
+    ).rejects.toThrow();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("revalidates the bound runner immediately before process launch", async () => {

@@ -86,7 +86,7 @@ const manifests: Record<SafeToolId, SafeToolManifest> = {
   },
   "terminal.run": {
     id: "terminal.run",
-    version: "1.2.0",
+    version: "1.3.0",
     description: "Runs one exact approved project script through a pinned non-login shell.",
     risk: "system",
     sideEffect: "local",

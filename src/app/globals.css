@@ -23,7 +23,7 @@
   --state-danger: oklch(0.68 0.16 25);
   --state-success: oklch(0.76 0.11 175);
   --color-accent-listen: oklch(0.58 0.09 235);
-  --color-accent-think: oklch(0.70 0.14 55);
+  --color-accent-think: oklch(0.68 0.12 55);
   --color-accent-ask: oklch(0.60 0.17 25);
   --color-accent-speak: oklch(0.70 0.09 195);
   --color-fallback: oklch(0.7 0.14 85);
@@ -92,18 +92,18 @@
     z-index: 0;
     background:
       radial-gradient(
-        ellipse 70% 55% at 50% 42%,
-        color-mix(in oklab, var(--state-glow, #8aa4c4) 18%, transparent),
-        transparent 70%
+        ellipse 58% 48% at 50% 42%,
+        color-mix(in oklab, var(--state-glow, #8aa4c4) 10%, transparent),
+        transparent 72%
       ),
       radial-gradient(
         ellipse 100% 80% at 50% 100%,
-        oklch(0.1 0.02 250 / 0.55),
+        oklch(0.08 0.015 250 / 0.5),
         transparent 55%
       ),
       radial-gradient(
         ellipse 120% 100% at 50% 0%,
-        oklch(0.08 0.02 252 / 0.45),
+        oklch(0.06 0.015 252 / 0.4),
         transparent 50%
       );
   }
@@ -112,7 +112,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    opacity: 0.035;
+    opacity: 0.028;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     pointer-events: none;
   }
@@ -120,16 +120,16 @@
   .presence-halo {
     pointer-events: none;
     position: absolute;
-    inset: -12%;
+    inset: -10%;
     z-index: 10;
     border-radius: 9999px;
     background: radial-gradient(
       circle at 50% 50%,
-      color-mix(in oklab, var(--state-glow, #8aa4c4) 28%, transparent),
-      transparent 68%
+      color-mix(in oklab, var(--state-glow, #8aa4c4) 14%, transparent),
+      transparent 70%
     );
-    filter: blur(18px);
-    opacity: 0.85;
+    filter: blur(22px);
+    opacity: 0.55;
   }
 
   .elev-1 {

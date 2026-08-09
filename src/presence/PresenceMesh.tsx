@@ -42,9 +42,9 @@ const LAYER_SCALE: Record<NeuralLayer, number> = {
 };
 
 const LAYER_OPACITY: Record<NeuralLayer, number> = {
-  core: 1,
-  cortex: 0.95,
-  micro: 0.72,
+  core: 0.92,
+  cortex: 0.78,
+  micro: 0.52,
 };
 
 function makeNodeUniforms(
@@ -86,7 +86,7 @@ function makeLinkUniforms(initial: {
     uPointerStrength: { value: 0 },
     uColorA: { value: new THREE.Vector3(...hexToRgb(initial.colorA)) },
     uColorB: { value: new THREE.Vector3(...hexToRgb(initial.colorB)) },
-    uLayerOpacity: { value: 0.9 },
+    uLayerOpacity: { value: 0.72 },
     uTurbulence: { value: 0.12 },
   };
 }
@@ -145,9 +145,9 @@ function OrbitRings() {
       {rings.map((g, i) => (
         <lineLoop key={i} geometry={g}>
           <lineBasicMaterial
-            color="#c87840"
+            color="#b86a32"
             transparent
-            opacity={0.2 - i * 0.02}
+            opacity={0.12 - i * 0.015}
             depthWrite={false}
           />
         </lineLoop>
@@ -302,7 +302,7 @@ export function PresenceMesh({
   const outerLinkUniforms = useMemo(
     () => ({
       ...makeLinkUniforms(PRESENCE_BY_STATE.idle),
-      uLayerOpacity: { value: 0.78 },
+      uLayerOpacity: { value: 0.58 },
     }),
     [],
   );

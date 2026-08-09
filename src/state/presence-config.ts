@@ -53,17 +53,17 @@ export const PRESENCE_BY_STATE: Record<AgentState, PresenceUniforms> = {
     pulseTravel: 0.7,
   },
   thinking: {
-    // gold/amber neural fire — matches dense “thinking” orb reference
-    colorA: "#ffc078",
-    colorB: "#ff6a1a",
-    turbulence: 0.85,
-    coherence: 0.94,
-    pulse: 0.72,
+    // âmbar controlado da referência — núcleo quente, borda mais escura
+    colorA: "#e09048",
+    colorB: "#7a320e",
+    turbulence: 0.72,
+    coherence: 0.92,
+    pulse: 0.55,
     freezeColor: false,
-    rotation: 0.42,
-    activation: 1,
-    linkIntensity: 1.45,
-    pulseTravel: 1.9,
+    rotation: 0.32,
+    activation: 0.92,
+    linkIntensity: 1.05,
+    pulseTravel: 1.35,
   },
   speaking: {
     colorA: "#3cbdb0",

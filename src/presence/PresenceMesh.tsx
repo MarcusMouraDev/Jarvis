@@ -36,15 +36,15 @@ interface PresenceMeshProps {
 }
 
 const LAYER_SCALE: Record<NeuralLayer, number> = {
-  core: 1.15,
-  cortex: 1,
-  micro: 0.55,
+  core: 1.05,
+  cortex: 0.78,
+  micro: 0.42,
 };
 
 const LAYER_OPACITY: Record<NeuralLayer, number> = {
   core: 1,
-  cortex: 0.85,
-  micro: 0.45,
+  cortex: 0.92,
+  micro: 0.58,
 };
 
 function makeNodeUniforms(
@@ -93,13 +93,22 @@ function makeLinkUniforms(initial: {
 
 function OrbitRings() {
   const geos = useMemo(() => {
-    return [1.05, 1.22, 1.36].map((r, i) => {
-      const curve = new THREE.EllipseCurve(0, 0, r, r * (0.92 + i * 0.02), 0, Math.PI * 2, false, 0);
-      const pts = curve.getPoints(96);
+    return [0.95, 1.08, 1.2, 1.32, 1.42].map((r, i) => {
+      const curve = new THREE.EllipseCurve(
+        0,
+        0,
+        r,
+        r * (0.9 + (i % 3) * 0.03),
+        0,
+        Math.PI * 2,
+        false,
+        i * 0.35,
+      );
+      const pts = curve.getPoints(128);
       const positions = new Float32Array(pts.length * 3);
       for (let j = 0; j < pts.length; j += 1) {
         positions[j * 3] = pts[j].x;
-        positions[j * 3 + 1] = pts[j].y * 0.35;
+        positions[j * 3 + 1] = pts[j].y * (0.28 + (i % 2) * 0.08);
         positions[j * 3 + 2] = pts[j].y;
       }
       const g = new THREE.BufferGeometry();
@@ -109,13 +118,13 @@ function OrbitRings() {
   }, []);
 
   return (
-    <group rotation={[0.4, 0.2, 0.15]}>
+    <group rotation={[0.55, 0.25, 0.2]}>
       {geos.map((g, i) => (
         <lineLoop key={i} geometry={g}>
           <lineBasicMaterial
-            color="#8aa4c4"
+            color="#6a849c"
             transparent
-            opacity={0.12 - i * 0.02}
+            opacity={0.16 - i * 0.018}
             depthWrite={false}
           />
         </lineLoop>

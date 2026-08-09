@@ -209,8 +209,10 @@ export function CommandPalette({
                         type="button"
                         role="option"
                         aria-selected={selected}
-                        className={`spotlight-row flex w-full flex-col rounded-lg px-3 py-2 text-left ${
-                          selected ? "bg-surface-2/80" : ""
+                        className={`flex w-full flex-col rounded-lg px-3 py-2 text-left ${
+                          selected
+                            ? "bg-surface-2/70 ring-1 ring-inset ring-[color-mix(in_oklab,var(--focus-ring)_35%,transparent)]"
+                            : "spotlight-row"
                         }`}
                         onMouseEnter={() => setActive(index)}
                         onPointerMove={onRowPointer}

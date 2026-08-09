@@ -9,7 +9,7 @@
   --color-surface-1: oklch(0.155 0.032 252);
   --color-surface-2: oklch(0.215 0.035 252);
   --color-surface-3: oklch(0.285 0.038 252);
-  --color-accent: oklch(0.62 0.18 250);
+  --color-accent: oklch(0.58 0.09 235);
   --color-text: oklch(0.97 0.012 250);
   --color-muted: oklch(0.70 0.025 250);
   --color-border: oklch(0.34 0.035 252);
@@ -18,13 +18,14 @@
   --color-ink-0: oklch(0.97 0.012 250);
   --color-ink-1: oklch(0.82 0.025 250);
   --color-ink-2: oklch(0.70 0.025 250);
-  --focus-ring: oklch(0.82 0.16 205);
-  --state-danger: oklch(0.72 0.18 25);
-  --state-success: oklch(0.80 0.13 175);
-  --color-accent-listen: oklch(0.62 0.18 250);
-  --color-accent-think: oklch(0.72 0.16 55);
-  --color-accent-ask: oklch(0.62 0.2 25);
-  --color-accent-speak: oklch(0.78 0.12 190);
+  /* HUD steel — muted, not neon */
+  --focus-ring: oklch(0.72 0.08 220);
+  --state-danger: oklch(0.68 0.16 25);
+  --state-success: oklch(0.76 0.11 175);
+  --color-accent-listen: oklch(0.58 0.09 235);
+  --color-accent-think: oklch(0.70 0.14 55);
+  --color-accent-ask: oklch(0.60 0.17 25);
+  --color-accent-speak: oklch(0.70 0.09 195);
   --color-fallback: oklch(0.7 0.14 85);
   --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -59,6 +60,15 @@
   :focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
+  }
+
+  /* Componentes com ring próprio evitam caixa dupla */
+  .focus-ring:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [role="combobox"]:focus-visible {
+    outline: none;
   }
 }
 

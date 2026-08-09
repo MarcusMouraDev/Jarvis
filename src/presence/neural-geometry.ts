@@ -45,25 +45,25 @@ export const MAX_EDGES = 1200;
 
 const PROFILES: Record<NeuralQuality, Omit<NeuralProfile, "quality">> = {
   mobile: {
-    coreCount: 96,
-    cortexCount: 150,
-    microCount: 80,
-    neighbors: 4,
-    maxEdges: 700,
+    coreCount: 120,
+    cortexCount: 200,
+    microCount: 140,
+    neighbors: 5,
+    maxEdges: 900,
   },
   balanced: {
-    coreCount: 140,
-    cortexCount: 260,
-    microCount: 180,
-    neighbors: 5,
-    maxEdges: 1400,
+    coreCount: 200,
+    cortexCount: 380,
+    microCount: 280,
+    neighbors: 6,
+    maxEdges: 2000,
   },
   high: {
-    coreCount: 220,
-    cortexCount: 420,
-    microCount: 300,
-    neighbors: 6,
-    maxEdges: 2200,
+    coreCount: 300,
+    cortexCount: 560,
+    microCount: 420,
+    neighbors: 7,
+    maxEdges: 3200,
   },
 };
 
@@ -192,9 +192,9 @@ export function getNeuralProfile(input: {
 
 function layerRadius(layer: NeuralLayer, index: number, count: number): number {
   const t = count <= 1 ? 0 : index / (count - 1);
-  if (layer === "core") return 0.72;
-  if (layer === "cortex") return 1.0 + t * 0.15;
-  return 1.22 + t * 0.16;
+  if (layer === "core") return 0.62 + t * 0.08;
+  if (layer === "cortex") return 0.82 + t * 0.18;
+  return 1.05 + t * 0.22;
 }
 
 function pointsForLayer(

@@ -42,8 +42,8 @@ void main() {
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mv;
-  float size = (5.5 + vGlow * 14.0 + pull * uPointerStrength * 8.0) * uPointScale * (320.0 / max(-mv.z, 0.001));
-  gl_PointSize = clamp(size, 3.0, 24.0);
+  float size = (3.2 + vGlow * 8.5 + pull * uPointerStrength * 5.0) * uPointScale * (320.0 / max(-mv.z, 0.001));
+  gl_PointSize = clamp(size, 2.0, 16.0);
 }
 `;
 
@@ -126,7 +126,7 @@ varying float vPhase;
 varying float vPull;
 
 void main() {
-  float base = 0.22 + uLinkIntensity * 0.38;
+  float base = 0.28 + uLinkIntensity * 0.42;
   float alpha = clamp(
     base + vPulse * (0.65 + uLinkIntensity * 0.5) + vPull * uPointerStrength * 0.35,
     0.08,

@@ -20,9 +20,52 @@ export interface NeuralGeometry {
   edgePhases: Float32Array;
 }
 
+export type NeuralLayer = "core" | "cortex" | "micro";
+export type NeuralQuality = "mobile" | "balanced" | "high";
+
+export interface NeuralProfile {
+  quality: NeuralQuality;
+  coreCount: number;
+  cortexCount: number;
+  microCount: number;
+  neighbors: number;
+  maxEdges: number;
+}
+
+export interface LayeredNeuralGeometry {
+  core: NeuralGeometry;
+  cortex: NeuralGeometry;
+  micro: NeuralGeometry;
+  edges: NeuralEdge[];
+}
+
 export const DEFAULT_NEURON_COUNT = 220;
 export const DEFAULT_NEIGHBORS = 6;
 export const MAX_EDGES = 1200;
+
+const PROFILES: Record<NeuralQuality, Omit<NeuralProfile, "quality">> = {
+  mobile: {
+    coreCount: 96,
+    cortexCount: 150,
+    microCount: 80,
+    neighbors: 4,
+    maxEdges: 700,
+  },
+  balanced: {
+    coreCount: 140,
+    cortexCount: 260,
+    microCount: 180,
+    neighbors: 5,
+    maxEdges: 1400,
+  },
+  high: {
+    coreCount: 220,
+    cortexCount: 420,
+    microCount: 300,
+    neighbors: 6,
+    maxEdges: 2200,
+  },
+};
 
 function hash01(n: number): number {
   const x = Math.sin(n * 127.1) * 43758.5453;
@@ -92,14 +135,10 @@ export function buildEdges(
   return edges;
 }
 
-export function createNeuralGeometry(
-  count = DEFAULT_NEURON_COUNT,
-  neighbors = DEFAULT_NEIGHBORS,
-  radius = 1.15,
+function packGeometry(
+  points: NeuralPoint[],
+  edges: NeuralEdge[],
 ): NeuralGeometry {
-  const points = fibonacciSphere(count, radius);
-  const edges = buildEdges(points, neighbors);
-
   const positions = new Float32Array(points.length * 3);
   const phases = new Float32Array(points.length);
   for (let i = 0; i < points.length; i += 1) {
@@ -129,7 +168,134 @@ export function createNeuralGeometry(
   return { points, edges, positions, phases, edgePositions, edgePhases };
 }
 
+export function createNeuralGeometry(
+  count = DEFAULT_NEURON_COUNT,
+  neighbors = DEFAULT_NEIGHBORS,
+  radius = 1.15,
+): NeuralGeometry {
+  const points = fibonacciSphere(count, radius);
+  const edges = buildEdges(points, neighbors);
+  return packGeometry(points, edges);
+}
+
+export function getNeuralProfile(input: {
+  width: number;
+  dpr: number;
+  reducedMotion: boolean;
+}): NeuralProfile {
+  void input.reducedMotion; // density kept; motion handled by consumers
+  let quality: NeuralQuality = "balanced";
+  if (input.width < 640 || input.dpr > 2.25) quality = "mobile";
+  else if (input.width >= 1280 && input.dpr <= 1.75) quality = "high";
+  return { quality, ...PROFILES[quality] };
+}
+
+function layerRadius(layer: NeuralLayer, index: number, count: number): number {
+  const t = count <= 1 ? 0 : index / (count - 1);
+  if (layer === "core") return 0.72;
+  if (layer === "cortex") return 1.0 + t * 0.15;
+  return 1.22 + t * 0.16;
+}
+
+function pointsForLayer(
+  layer: NeuralLayer,
+  count: number,
+  phaseOffset: number,
+): NeuralPoint[] {
+  const base = fibonacciSphere(count, 1);
+  return base.map((p, i) => {
+    const radius = layerRadius(layer, i, count);
+    return {
+      x: p.x * radius,
+      y: p.y * radius,
+      z: p.z * radius,
+      phase: hash01(phaseOffset + i + 1),
+    };
+  });
+}
+
+export function createLayeredNeuralGeometry(
+  profile: NeuralProfile,
+): LayeredNeuralGeometry {
+  const corePoints = pointsForLayer("core", profile.coreCount, 0);
+  const cortexPoints = pointsForLayer("cortex", profile.cortexCount, 10_000);
+  const microPoints = pointsForLayer("micro", profile.microCount, 20_000);
+
+  const combined = [...corePoints, ...cortexPoints, ...microPoints];
+  const edges = buildEdges(combined, profile.neighbors, profile.maxEdges);
+
+  const coreEnd = corePoints.length;
+  const cortexEnd = coreEnd + cortexPoints.length;
+
+  const remapEdge = (e: NeuralEdge, offset: number, localCount: number) => {
+    const a = e.a - offset;
+    const b = e.b - offset;
+    if (a < 0 || b < 0 || a >= localCount || b >= localCount) return null;
+    return { a, b, phase: e.phase };
+  };
+
+  const coreLocalEdges: NeuralEdge[] = [];
+  const cortexLocalEdges: NeuralEdge[] = [];
+  const microLocalEdges: NeuralEdge[] = [];
+
+  for (const e of edges) {
+    const inCore = e.a < coreEnd && e.b < coreEnd;
+    const inCortex =
+      e.a >= coreEnd &&
+      e.a < cortexEnd &&
+      e.b >= coreEnd &&
+      e.b < cortexEnd;
+    const inMicro = e.a >= cortexEnd && e.b >= cortexEnd;
+    if (inCore) {
+      const local = remapEdge(e, 0, corePoints.length);
+      if (local) coreLocalEdges.push(local);
+    } else if (inCortex) {
+      const local = remapEdge(e, coreEnd, cortexPoints.length);
+      if (local) cortexLocalEdges.push(local);
+    } else if (inMicro) {
+      const local = remapEdge(e, cortexEnd, microPoints.length);
+      if (local) microLocalEdges.push(local);
+    }
+  }
+
+  return {
+    core: packGeometry(corePoints, coreLocalEdges),
+    cortex: packGeometry(cortexPoints, cortexLocalEdges),
+    micro: packGeometry(microPoints, microLocalEdges),
+    edges,
+  };
+}
+
 export function averageDegree(geometry: NeuralGeometry): number {
   if (!geometry.points.length) return 0;
   return (geometry.edges.length * 2) / geometry.points.length;
+}
+
+/** Cross-layer edge buffers for a single lineSegments draw (combined space). */
+export function packCombinedEdges(
+  layered: LayeredNeuralGeometry,
+): { edgePositions: Float32Array; edgePhases: Float32Array } {
+  const points = [
+    ...layered.core.points,
+    ...layered.cortex.points,
+    ...layered.micro.points,
+  ];
+  const edges = layered.edges;
+  const edgePositions = new Float32Array(edges.length * 6);
+  const edgePhases = new Float32Array(edges.length * 2);
+  for (let i = 0; i < edges.length; i += 1) {
+    const e = edges[i];
+    const a = points[e.a];
+    const b = points[e.b];
+    const o = i * 6;
+    edgePositions[o] = a.x;
+    edgePositions[o + 1] = a.y;
+    edgePositions[o + 2] = a.z;
+    edgePositions[o + 3] = b.x;
+    edgePositions[o + 4] = b.y;
+    edgePositions[o + 5] = b.z;
+    edgePhases[i * 2] = e.phase;
+    edgePhases[i * 2 + 1] = e.phase;
+  }
+  return { edgePositions, edgePhases };
 }

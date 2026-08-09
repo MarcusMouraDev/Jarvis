@@ -3,8 +3,10 @@ import {
   DEFAULT_NEURON_COUNT,
   MAX_EDGES,
   averageDegree,
+  createLayeredNeuralGeometry,
   createNeuralGeometry,
   fibonacciSphere,
+  getNeuralProfile,
 } from "./neural-geometry";
 
 describe("neural-geometry", () => {
@@ -42,6 +44,42 @@ describe("neural-geometry", () => {
     const a = createNeuralGeometry(80, 5);
     const b = createNeuralGeometry(80, 5);
     expect([...a.positions]).toEqual([...b.positions]);
+    expect(a.edges).toEqual(b.edges);
+  });
+
+  it("mantém o perfil determinístico por viewport", () => {
+    expect(
+      getNeuralProfile({ width: 390, dpr: 3, reducedMotion: false }).quality,
+    ).toBe("mobile");
+    expect(
+      getNeuralProfile({ width: 1440, dpr: 1, reducedMotion: false }).quality,
+    ).toBe("high");
+    expect(
+      getNeuralProfile({ width: 900, dpr: 2, reducedMotion: true }).quality,
+    ).toBe("balanced");
+  });
+
+  it("respeita o teto de arestas no perfil high", () => {
+    const geometry = createLayeredNeuralGeometry(
+      getNeuralProfile({ width: 1440, dpr: 1, reducedMotion: false }),
+    );
+    expect(geometry.edges.length).toBeLessThanOrEqual(2200);
+    expect(geometry.core.points.length).toBe(220);
+    expect(geometry.cortex.points.length).toBe(420);
+    expect(geometry.micro.points.length).toBe(300);
+  });
+
+  it("camadas layered são determinísticas", () => {
+    const profile = getNeuralProfile({
+      width: 800,
+      dpr: 2,
+      reducedMotion: false,
+    });
+    const a = createLayeredNeuralGeometry(profile);
+    const b = createLayeredNeuralGeometry(profile);
+    expect([...a.core.positions]).toEqual([...b.core.positions]);
+    expect([...a.cortex.positions]).toEqual([...b.cortex.positions]);
+    expect([...a.micro.positions]).toEqual([...b.micro.positions]);
     expect(a.edges).toEqual(b.edges);
   });
 });

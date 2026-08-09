@@ -109,6 +109,20 @@ interface ActiveRun {
   controller: AbortController;
 }
 
+interface PendingContinuation {
+  sessionId: string;
+  runId: string;
+  invocationId: string;
+  toolInput: JsonValue;
+  prompt: string;
+  context: JsonValue;
+}
+
+type PendingContinuationBinding = Pick<
+  PendingContinuation,
+  "sessionId" | "runId" | "invocationId"
+>;
+
 function asRecord(value: JsonValue): { [key: string]: JsonValue } | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value
@@ -172,14 +186,21 @@ function numberField(record: { [key: string]: JsonValue }, key: string): number 
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function parseBoundInput(event: CoreEvent): BoundRunInput {
+function parseBoundInput(
+  event: CoreEvent,
+  prompt: string,
+  context: JsonValue,
+): BoundRunInput {
   const payload = asRecord(event.payload);
-  if (!payload || typeof payload.prompt !== "string" || typeof payload.inputDigest !== "string") {
+  if (!payload || typeof payload.inputDigest !== "string") {
     throw new Error("run_input_not_bound");
   }
+  if (digest({ prompt, context }) !== payload.inputDigest) {
+    throw new Error("run_input_binding_mismatch");
+  }
   return {
-    prompt: payload.prompt,
-    context: payload.context ?? null,
+    prompt,
+    context,
     inputDigest: payload.inputDigest,
     allowPaidProvider: payload.allowPaidProvider === true,
     approvedCloudEgressDigest:
@@ -298,6 +319,7 @@ function modelTools(agent: AgentDefinition): SafeModelToolDefinition[] {
 
 export class SafeModelOrchestrator {
   private readonly activeRuns = new Map<string, ActiveRun>();
+  private readonly pendingContinuations = new Map<string, PendingContinuation>();
 
   constructor(private readonly options: SafeModelOrchestratorOptions) {
     if (!Number.isFinite(options.serverMaxTimeoutMs) || options.serverMaxTimeoutMs <= 0) {
@@ -340,7 +362,14 @@ export class SafeModelOrchestrator {
           from: ["pending"],
           to: "running",
         });
-        this.append(run.runId, "run.input_bound", asJsonValue(bound));
+        this.append(run.runId, "run.input_bound", {
+          inputDigest: bound.inputDigest,
+          contextDigest: digest(bound.context),
+          allowPaidProvider: bound.allowPaidProvider,
+          approvedCloudEgressDigest: bound.approvedCloudEgressDigest,
+          maxCostUsd: bound.maxCostUsd,
+          timeoutMs: bound.timeoutMs,
+        });
         return await this.executeLoop({
           run: { ...run, status: "running" },
           agent,
@@ -364,11 +393,7 @@ export class SafeModelOrchestrator {
     const events = this.options.store.replayEvents(run.runId);
     const boundEvent = events.find((event) => event.type === "run.input_bound");
     if (!boundEvent) throw new Error("run_input_not_bound");
-    const storedBound = parseBoundInput(boundEvent);
-    if (digest({ prompt: input.prompt, context: input.context }) !== storedBound.inputDigest) {
-      throw new Error("run_input_binding_mismatch");
-    }
-    const bound = { ...storedBound, prompt: input.prompt, context: input.context };
+    const bound = parseBoundInput(boundEvent, input.prompt, input.context);
     const pending = pendingToolCall(events, input.invocationId);
 
     return this.withActiveRun(run, agent, bound.timeoutMs, async (signal) => {
@@ -425,6 +450,7 @@ export class SafeModelOrchestrator {
     const active = this.activeRuns.get(input.runId);
     if (active?.sessionId === input.sessionId) {
       active.controller.abort("cancelled");
+      this.discardRunContinuations(input.sessionId, input.runId);
       return true;
     }
     const run = this.options.store.getRun(input.runId);
@@ -438,7 +464,46 @@ export class SafeModelOrchestrator {
       from: ["waiting_approval"],
       to: "cancelled",
     });
+    this.discardRunContinuations(input.sessionId, input.runId);
     return true;
+  }
+
+  hasPendingContinuation(input: PendingContinuationBinding): boolean {
+    const pending = this.pendingContinuations.get(input.invocationId);
+    return (
+      pending?.sessionId === input.sessionId &&
+      pending.runId === input.runId &&
+      pending.invocationId === input.invocationId
+    );
+  }
+
+  async resumePendingTool(
+    input: PendingContinuationBinding,
+  ): Promise<SafeOrchestratorResult> {
+    const pending = this.pendingContinuations.get(input.invocationId);
+    if (
+      !pending ||
+      pending.sessionId !== input.sessionId ||
+      pending.runId !== input.runId
+    ) {
+      throw new Error("continuation_unavailable");
+    }
+    const result = await this.resumeTool({
+      ...input,
+      toolInput: pending.toolInput,
+      prompt: pending.prompt,
+      context: pending.context,
+    });
+    if (result.status !== "approval_required") {
+      this.pendingContinuations.delete(input.invocationId);
+    }
+    return result;
+  }
+
+  discardPendingContinuation(input: PendingContinuationBinding): void {
+    if (this.hasPendingContinuation(input)) {
+      this.pendingContinuations.delete(input.invocationId);
+    }
   }
 
   private async executeLoop(state: LoopState): Promise<SafeOrchestratorResult> {
@@ -561,6 +626,14 @@ export class SafeModelOrchestrator {
             sessionId: state.run.sessionId!,
             from: ["running"],
             to: "waiting_approval",
+          });
+          this.pendingContinuations.set(result.invocationId, {
+            sessionId: state.run.sessionId!,
+            runId: state.run.runId,
+            invocationId: result.invocationId,
+            toolInput: call.input,
+            prompt: state.bound.prompt,
+            context: state.bound.context,
           });
           return this.approvalResult(result);
         }
@@ -713,6 +786,14 @@ export class SafeModelOrchestrator {
       expiresAt: result.expiresAt,
       preview: result.preview,
     };
+  }
+
+  private discardRunContinuations(sessionId: string, runId: string): void {
+    for (const [invocationId, pending] of this.pendingContinuations) {
+      if (pending.sessionId === sessionId && pending.runId === runId) {
+        this.pendingContinuations.delete(invocationId);
+      }
+    }
   }
 
   private async withActiveRun(

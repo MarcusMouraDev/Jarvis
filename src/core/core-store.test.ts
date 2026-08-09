@@ -107,6 +107,115 @@ describe("core-store", () => {
     );
   });
 
+  it("builds session-bound read models for safe-core reload and replay", () => {
+    store = openCoreStore();
+    const session = store.createSafeSession({
+      sessionId: "session-safe",
+      csrfHash: "a".repeat(64),
+      defaultAgentId: "Hermes",
+      expiresAt: "2026-08-09T10:00:00.000Z",
+      createdAt: "2026-08-08T10:00:00.000Z",
+      lastSeenAt: "2026-08-08T10:00:00.000Z",
+    });
+    store.createSession({ sessionId: "session-other" });
+    const olderRun = store.createRun({
+      runId: "run-older",
+      sessionId: session.sessionId,
+      agentId: "Hermes",
+      privacyClass: "internal",
+      requestedModel: "local",
+      workspace: { kind: "none" },
+      status: "completed",
+      createdAt: "2026-08-08T10:01:00.000Z",
+    });
+    const newestRun = store.createRun({
+      runId: "run-newest",
+      sessionId: session.sessionId,
+      agentId: "Planner",
+      privacyClass: "confidential",
+      requestedModel: "local",
+      workspace: { kind: "none" },
+      status: "waiting_approval",
+      createdAt: "2026-08-08T10:02:00.000Z",
+    });
+    store.createRun({
+      runId: "run-other",
+      sessionId: "session-other",
+      agentId: "Hermes",
+      privacyClass: "internal",
+      requestedModel: "local",
+      workspace: { kind: "none" },
+      status: "running",
+    });
+    const message = store.createMessage({
+      messageId: "message-safe",
+      sessionId: session.sessionId,
+      runId: newestRun.runId,
+      role: "user",
+      content: { text: "resume me" },
+      createdAt: "2026-08-08T10:03:00.000Z",
+    });
+    store.createMessage({
+      messageId: "message-other",
+      sessionId: "session-other",
+      runId: "run-other",
+      role: "user",
+      content: { text: "private to another session" },
+    });
+    const event = store.appendEvent({
+      eventId: "event-safe",
+      runId: newestRun.runId,
+      type: "tool.approval_required",
+      payload: { invocationId: "invocation-safe" },
+      createdAt: "2026-08-08T10:04:00.000Z",
+    });
+    store.createSafeInvocation({
+      invocationId: "invocation-safe",
+      approvalId: "approval-safe",
+      sessionId: session.sessionId,
+      runId: newestRun.runId,
+      toolId: "file.patch",
+      toolVersion: "1.0.0",
+      input: { diff: "sanitized" },
+      inputDigest: "b".repeat(64),
+      workspace: { kind: "none" },
+      workspaceDigest: "c".repeat(64),
+      bindingDigest: "d".repeat(64),
+      effect: { target: "src/a.ts" },
+      sideEffect: "local",
+      idempotent: false,
+      createdAt: "2026-08-08T10:04:00.000Z",
+      expiresAt: "2026-08-08T10:14:00.000Z",
+    });
+
+    expect(store.updateSessionDefaultAgent(session.sessionId, "Planner")).toMatchObject({
+      sessionId: session.sessionId,
+      defaultAgentId: "Planner",
+    });
+    expect(store.listRunsForSession(session.sessionId, 1)).toEqual([newestRun]);
+    expect(store.listRunsForSession(session.sessionId, 10)).toEqual([
+      newestRun,
+      olderRun,
+    ]);
+    expect(store.listMessagesForRun(session.sessionId, newestRun.runId)).toEqual([
+      message,
+    ]);
+    expect(store.listMessagesForRun("session-other", newestRun.runId)).toEqual([]);
+    expect(store.listApprovalsForRun(session.sessionId, newestRun.runId)).toEqual([
+      expect.objectContaining({
+        approvalId: "approval-safe",
+        invocationId: "invocation-safe",
+        status: "pending",
+      }),
+    ]);
+    expect(store.listApprovalsForRun("session-other", newestRun.runId)).toEqual([]);
+    expect(store.sequenceForEvent(newestRun.runId, event.eventId)).toBe(event.seq);
+    expect(store.sequenceForEvent("run-other", event.eventId)).toBeNull();
+    expect(() => store.listRunsForSession(session.sessionId, 0)).toThrow(
+      "Invalid run list limit",
+    );
+  });
+
   it("persists typed sessions, runs and messages across a restart", () => {
     store = openCoreStore();
     store.createSession({

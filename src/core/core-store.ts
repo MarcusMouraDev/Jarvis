@@ -874,6 +874,17 @@ export class CoreStore {
       .run(assertText(lastSeenAt, "session last seen time"), sessionId);
   }
 
+  updateSessionDefaultAgent(sessionId: string, agentId: string): CoreSession {
+    const changed = this.database
+      .prepare("UPDATE sessions SET default_agent_id = ? WHERE session_id = ?")
+      .run(
+        assertText(agentId, "default agent id"),
+        assertText(sessionId, "session id"),
+      );
+    if (changed.changes !== 1) throw new Error("session_not_found");
+    return this.getSession(sessionId)!;
+  }
+
   createRun(input: CreateRunInput): CoreRun {
     const createdAt = input.createdAt ?? now();
     const runId = assertText(input.runId ?? crypto.randomUUID(), "run id");
@@ -902,6 +913,21 @@ export class CoreStore {
     return mapRun(
       this.database.prepare("SELECT * FROM runs WHERE run_id = ?").get(runId),
     );
+  }
+
+  listRunsForSession(sessionId: string, limit = 20): CoreRun[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new TypeError("Invalid run list limit");
+    }
+    return this.database
+      .prepare(
+        `SELECT * FROM runs
+         WHERE session_id = ?
+         ORDER BY created_at DESC, run_id DESC
+         LIMIT ?`,
+      )
+      .all(assertText(sessionId, "session id"), limit)
+      .map((row) => mapRun(row)!);
   }
 
   transitionRunStatus(input: {
@@ -959,6 +985,22 @@ export class CoreStore {
     );
   }
 
+  listMessagesForRun(sessionId: string, runId: string): CoreMessage[] {
+    return this.database
+      .prepare(
+        `SELECT messages.* FROM messages
+         INNER JOIN runs ON runs.run_id = messages.run_id
+         WHERE runs.session_id = ? AND runs.run_id = ? AND messages.session_id = ?
+         ORDER BY messages.created_at ASC, messages.message_id ASC`,
+      )
+      .all(
+        assertText(sessionId, "session id"),
+        assertText(runId, "run id"),
+        sessionId,
+      )
+      .map((row) => mapMessage(row)!);
+  }
+
   appendEvent(input: AppendEventInput): CoreEvent {
     return this.database.transaction(() => {
       const next = this.database
@@ -996,6 +1038,16 @@ export class CoreStore {
       )
       .all(runId, afterSeq)
       .map(mapEvent);
+  }
+
+  sequenceForEvent(runId: string, eventId: string): number | null {
+    const row = this.database
+      .prepare("SELECT seq FROM events WHERE run_id = ? AND event_id = ?")
+      .get(
+        assertText(runId, "run id"),
+        assertText(eventId, "event id"),
+      ) as { seq: number } | undefined;
+    return row?.seq ?? null;
   }
 
   createSafeInvocation(input: CreateSafeInvocationInput): {
@@ -1095,6 +1147,22 @@ export class CoreStore {
         .prepare("SELECT * FROM approvals WHERE invocation_id = ?")
         .get(invocationId),
     );
+  }
+
+  listApprovalsForRun(sessionId: string, runId: string): SafeToolApproval[] {
+    return this.database
+      .prepare(
+        `SELECT approvals.* FROM approvals
+         INNER JOIN runs ON runs.run_id = approvals.run_id
+         WHERE runs.session_id = ? AND runs.run_id = ? AND approvals.session_id = ?
+         ORDER BY approvals.created_at ASC, approvals.approval_id ASC`,
+      )
+      .all(
+        assertText(sessionId, "session id"),
+        assertText(runId, "run id"),
+        sessionId,
+      )
+      .map((row) => mapSafeApproval(row)!);
   }
 
   decideSafeApproval(input: {

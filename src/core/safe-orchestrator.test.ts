@@ -544,6 +544,156 @@ describe("SafeModelOrchestrator", () => {
     );
   });
 
+  it("keeps exact approval continuation in process memory and out of persisted events", async () => {
+    const toolInput = {
+      diff: "plain exact patch body",
+      preimageHashes: { "src/a.ts": "abc123" },
+    };
+    const local = new ScriptedAdapter("local", "local", "qwen-local", [
+      [
+        {
+          ...eventBase("local", "qwen-local"),
+          type: "tool.call",
+          callId: "patch-call",
+          toolId: "file.patch",
+          input: toolInput,
+        },
+        { ...eventBase("local", "qwen-local"), type: "completion", finishReason: "tool_calls" },
+      ],
+      completed("local", "qwen-local", "continued"),
+    ]);
+    let approvalConsumable = false;
+    const gateway: OrchestratorToolGateway = {
+      async invoke(request) {
+        return {
+          status: "approval_required",
+          invocationId: "invocation-memory",
+          approvalId: "approval-memory",
+          runId: request.runId,
+          toolId: "file.patch",
+          expiresAt: "2026-08-08T12:10:00.000Z",
+          preview: { paths: ["src/a.ts"] },
+        };
+      },
+      async resume(request) {
+        if (!approvalConsumable) throw new Error("approval_not_consumable");
+        expect(request.input).toEqual(toolInput);
+        return {
+          status: "completed",
+          invocationId: request.invocationId,
+          runId: request.runId,
+          toolId: "file.patch",
+          output: { applied: true },
+        };
+      },
+    };
+    const runId = createRun();
+    const orchestrator = new SafeModelOrchestrator({
+      store,
+      catalog,
+      adapters: { local },
+      toolGateway: gateway,
+      serverMaxTimeoutMs: 500,
+      serverMaxBudgetUsd: 0,
+    });
+    const binding = {
+      sessionId: "session-1",
+      runId,
+      invocationId: "invocation-memory",
+    };
+
+    await expect(
+      orchestrator.execute({
+        sessionId: binding.sessionId,
+        runId,
+        prompt: "Do not persist this raw prompt",
+        context: { exact: "context stays in memory" },
+      }),
+    ).resolves.toMatchObject({
+      status: "approval_required",
+      runId,
+      invocationId: binding.invocationId,
+    });
+
+    expect(orchestrator.hasPendingContinuation(binding)).toBe(true);
+    expect(
+      orchestrator.hasPendingContinuation({ ...binding, sessionId: "session-other" }),
+    ).toBe(false);
+    const persisted = JSON.stringify(store.replayEvents(runId));
+    expect(persisted).not.toContain("Do not persist this raw prompt");
+    expect(persisted).not.toContain("context stays in memory");
+
+    await expect(orchestrator.resumePendingTool(binding)).rejects.toThrow(
+      "approval_not_consumable",
+    );
+    expect(orchestrator.hasPendingContinuation(binding)).toBe(true);
+
+    approvalConsumable = true;
+    await expect(orchestrator.resumePendingTool(binding)).resolves.toEqual({
+      status: "completed",
+      runId,
+    });
+    expect(orchestrator.hasPendingContinuation(binding)).toBe(false);
+    await expect(orchestrator.resumePendingTool(binding)).rejects.toThrow(
+      "continuation_unavailable",
+    );
+  });
+
+  it("discards a waiting approval continuation when the run is cancelled", async () => {
+    const local = new ScriptedAdapter("local", "local", "qwen-local", [
+      [
+        {
+          ...eventBase("local", "qwen-local"),
+          type: "tool.call",
+          callId: "patch-call",
+          toolId: "file.patch",
+          input: { diff: "patch", preimageHashes: {} },
+        },
+        { ...eventBase("local", "qwen-local"), type: "completion", finishReason: "tool_calls" },
+      ],
+    ]);
+    const gateway: OrchestratorToolGateway = {
+      async invoke(request) {
+        return {
+          status: "approval_required",
+          invocationId: "invocation-cancel",
+          approvalId: "approval-cancel",
+          runId: request.runId,
+          toolId: "file.patch",
+          expiresAt: "2026-08-08T12:10:00.000Z",
+          preview: { paths: ["src/a.ts"] },
+        };
+      },
+      async resume() {
+        throw new Error("must_not_resume");
+      },
+    };
+    const runId = createRun();
+    const orchestrator = new SafeModelOrchestrator({
+      store,
+      catalog,
+      adapters: { local },
+      toolGateway: gateway,
+      serverMaxTimeoutMs: 500,
+      serverMaxBudgetUsd: 0,
+    });
+    const binding = {
+      sessionId: "session-1",
+      runId,
+      invocationId: "invocation-cancel",
+    };
+
+    await orchestrator.execute({
+      sessionId: binding.sessionId,
+      runId,
+      prompt: "Cancel approval",
+      context: null,
+    });
+    expect(orchestrator.hasPendingContinuation(binding)).toBe(true);
+    expect(orchestrator.cancel({ sessionId: binding.sessionId, runId })).toBe(true);
+    expect(orchestrator.hasPendingContinuation(binding)).toBe(false);
+  });
+
   it("detects a repeated sensitive mutation after same-run resume", async () => {
     const toolInput = { diff: "token=secret", preimageHashes: {} };
     const toolTurn = (callId: string): SafeModelEvent[] => [

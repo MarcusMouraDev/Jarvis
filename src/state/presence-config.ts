@@ -28,9 +28,9 @@ export interface PresenceVisual {
 
 export const PRESENCE_BY_STATE: Record<AgentState, PresenceUniforms> = {
   idle: {
-    // steel HUD — cool, low chroma (not neon blue)
-    colorA: "#5a7d9a",
-    colorB: "#1a2a3c",
+    // ice-blue cinematográfico — luminoso sem neon
+    colorA: "#66b0f2",
+    colorB: "#0c2848",
     turbulence: 0.1,
     coherence: 1,
     pulse: 0.18,

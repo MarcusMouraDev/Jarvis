@@ -93,7 +93,13 @@ function makeLinkUniforms(initial: {
   };
 }
 
-function OrbitRings() {
+function OrbitRings({
+  dustMatRef,
+  ringMatRefs,
+}: {
+  dustMatRef: React.RefObject<THREE.ShaderMaterial | null>;
+  ringMatRefs: React.MutableRefObject<(THREE.LineBasicMaterial | null)[]>;
+}) {
   const { rings, dust } = useMemo(() => {
     // Round silhouette — radii near sphere, mild tilt (not flattened rings)
     const ringGeos = [0.98, 1.05, 1.12, 1.18].map((r, i) => {
@@ -139,16 +145,21 @@ function OrbitRings() {
   }, []);
 
   const dustUniforms = useMemo(
-    () => makeNodeUniforms(PRESENCE_BY_STATE.thinking, "micro"),
+    () => makeNodeUniforms(PRESENCE_BY_STATE.idle, "micro"),
     [],
   );
+
+  const idleRing = PRESENCE_BY_STATE.idle.colorA;
 
   return (
     <group rotation={[0.28, 0.18, 0.1]}>
       {rings.map((g, i) => (
         <lineLoop key={i} geometry={g}>
           <lineBasicMaterial
-            color="#b86a32"
+            ref={(mat) => {
+              ringMatRefs.current[i] = mat;
+            }}
+            color={idleRing}
             transparent
             opacity={0.1 - i * 0.014}
             depthWrite={false}
@@ -157,6 +168,7 @@ function OrbitRings() {
       ))}
       <points geometry={dust}>
         <shaderMaterial
+          ref={dustMatRef}
           vertexShader={nodeVertexShader}
           fragmentShader={nodeFragmentShader}
           uniforms={dustUniforms}
@@ -181,6 +193,8 @@ export function PresenceMesh({
   const cortexMatRef = useRef<THREE.ShaderMaterial>(null);
   const microMatRef = useRef<THREE.ShaderMaterial>(null);
   const stardustMatRef = useRef<THREE.ShaderMaterial>(null);
+  const dustMatRef = useRef<THREE.ShaderMaterial>(null);
+  const ringMatRefs = useRef<(THREE.LineBasicMaterial | null)[]>([]);
   const coreLinkMatRef = useRef<THREE.ShaderMaterial>(null);
   const outerLinkMatRef = useRef<THREE.ShaderMaterial>(null);
   const spring = useRef({ x: 0, y: 0, vx: 0, vy: 0, strength: 0 });
@@ -328,12 +342,20 @@ export function PresenceMesh({
     [],
   );
 
+  const syncRingColors = () => {
+    const [r, g, b] = current.current.colorA;
+    for (const mat of ringMatRefs.current) {
+      if (mat) mat.color.setRGB(r, g, b);
+    }
+  };
+
   const applyUniforms = (force = false) => {
     const mats = [
       coreMatRef.current,
       cortexMatRef.current,
       microMatRef.current,
       stardustMatRef.current,
+      dustMatRef.current,
       coreLinkMatRef.current,
       outerLinkMatRef.current,
     ];
@@ -363,7 +385,13 @@ export function PresenceMesh({
       current.current.saturation = visual.saturation;
     }
 
-    const nodeMats = [coreMatRef, cortexMatRef, microMatRef, stardustMatRef];
+    const nodeMats = [
+      coreMatRef,
+      cortexMatRef,
+      microMatRef,
+      stardustMatRef,
+      dustMatRef,
+    ];
     for (const ref of nodeMats) {
       const mat = ref.current;
       if (!mat) continue;
@@ -388,6 +416,7 @@ export function PresenceMesh({
       mat.uniforms.uTurbulence.value = current.current.turbulence;
       mat.uniforms.uReducedMotion.value = reducedMotion ? 1 : 0;
     }
+    syncRingColors();
   };
 
   useEffect(() => {
@@ -403,6 +432,7 @@ export function PresenceMesh({
       !cortexMatRef.current ||
       !microMatRef.current ||
       !stardustMatRef.current ||
+      !dustMatRef.current ||
       !coreLinkMatRef.current ||
       !outerLinkMatRef.current
     ) {
@@ -511,8 +541,10 @@ export function PresenceMesh({
     syncNode(cortexMatRef.current);
     syncNode(microMatRef.current);
     syncNode(stardustMatRef.current);
+    syncNode(dustMatRef.current);
     syncLink(coreLinkMatRef.current);
     syncLink(outerLinkMatRef.current);
+    syncRingColors();
 
     if (!reducedMotion) {
       const dt = delta * (0.6 + nextCfg.pulse);
@@ -521,6 +553,7 @@ export function PresenceMesh({
         cortexMatRef.current,
         microMatRef.current,
         stardustMatRef.current,
+        dustMatRef.current,
         coreLinkMatRef.current,
         outerLinkMatRef.current,
       ]) {
@@ -541,7 +574,7 @@ export function PresenceMesh({
 
   return (
     <group ref={groupRef}>
-      <OrbitRings />
+      <OrbitRings dustMatRef={dustMatRef} ringMatRefs={ringMatRefs} />
       <points geometry={coreGeo}>
         <shaderMaterial
           ref={coreMatRef}

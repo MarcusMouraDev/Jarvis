@@ -82,8 +82,9 @@ void main() {
   float alpha = (core * 0.95 + halo) * glow * uLayerOpacity * 0.85;
 
   vec3 color = mix(uColorB, uColorA, 0.35 + vPhase * 0.3 + vGlow * 0.22);
-  // branco só no miolo — como a referência
-  color = mix(color, vec3(1.0, 0.94, 0.86), vCore * 0.28 + core * 0.12);
+  // highlight derivado do estado — gelo no azul, quente no âmbar
+  vec3 hot = mix(uColorA, vec3(1.0), 0.75);
+  color = mix(color, hot, vCore * 0.28 + core * 0.12);
   color = mix(color, uColorA, vRim * 0.18);
   color *= (0.72 + vGlow * 0.38) * mix(0.75, 1.05, vDepth);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
@@ -159,7 +160,8 @@ void main() {
     0.72
   ) * uLayerOpacity * 0.9 * mix(0.7, 1.05, vDepth);
   vec3 color = mix(uColorB, uColorA, 0.42 + vPhase * 0.22 + vPulse * 0.22);
-  color = mix(color, vec3(1.0, 0.9, 0.78), vPulse * 0.18);
+  vec3 hot = mix(uColorA, vec3(1.0), 0.75);
+  color = mix(color, hot, vPulse * 0.18);
   color *= (0.78 + vPulse * 0.35) * mix(0.78, 1.05, vDepth);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
   color = mix(color, vec3(luma), (1.0 - uCoherence) * 0.65);

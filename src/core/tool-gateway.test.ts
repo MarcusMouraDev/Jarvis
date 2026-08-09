@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -24,7 +25,7 @@ import {
   type SafeToolFileSystem,
 } from "./tool-gateway";
 
-const sha256 = (value: string) =>
+const sha256 = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 
 describe("safe tool gateway", () => {
@@ -205,6 +206,43 @@ describe("safe tool gateway", () => {
   });
 
   it.each([
+    { label: "ls", input: { program: "ls", args: ["note.txt"] } },
+    { label: "head", input: { program: "head", args: ["note.txt", "other.txt"] } },
+    { label: "tail", input: { program: "tail", args: ["note.txt", "other.txt"] } },
+    { label: "wc", input: { program: "wc", args: ["note.txt"] } },
+    {
+      label: "rg text",
+      input: { program: "rg", args: ["hello", "note.txt", "other.txt"] },
+    },
+    {
+      label: "rg JSON",
+      input: { program: "rg", args: ["--json", "hello", "note.txt", "other.txt"] },
+    },
+  ])("normalizes workspace paths in $label output before persistence", async ({ input }) => {
+    writeFileSync(path.join(workspace, "note.txt"), "hello note\n");
+    writeFileSync(path.join(workspace, "other.txt"), "hello other\n");
+
+    const result = await gateway({ execute: undefined }).invoke({
+      sessionId: "session-1",
+      runId: "run-1",
+      toolId: "terminal.read",
+      input,
+    });
+    if (result.status !== "completed") throw new Error("expected completion");
+    const returned = JSON.stringify(result.output);
+    const persisted = JSON.stringify(store.getSafeInvocation(result.invocationId)?.output);
+    const tempPrefix = realpathSync(tmpdir());
+
+    expect(returned).toContain("<workspace>");
+    expect(persisted).toContain("<workspace>");
+    for (const exposedPrefix of [workspace, tempPrefix, process.env.HOME]) {
+      if (!exposedPrefix) continue;
+      expect(returned).not.toContain(exposedPrefix);
+      expect(persisted).not.toContain(exposedPrefix);
+    }
+  });
+
+  it.each([
     { program: "git", args: ["add", "README.md"] },
     { program: "git", args: ["commit", "-m", "message"] },
     { program: "git", args: ["commit", "--amend", "--no-edit"] },
@@ -239,6 +277,11 @@ describe("safe tool gateway", () => {
         program: "npm",
         script: "test",
         scriptCommand: "vitest run",
+        runner: {
+          program: "/bin/sh",
+          sha256: sha256(readFileSync("/bin/sh")),
+          nonLogin: true,
+        },
       },
     });
     expect(execute).not.toHaveBeenCalled();
@@ -248,7 +291,7 @@ describe("safe tool gateway", () => {
       runId: "run-1",
       invocationId: result.invocationId,
       toolId: "terminal.run",
-      toolVersion: "1.1.0",
+      toolVersion: "1.2.0",
     });
     expect(() =>
       store
@@ -306,8 +349,8 @@ describe("safe tool gateway", () => {
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({
-        program: "npm",
-        args: ["run", "test", "--ignore-scripts"],
+        program: "/bin/sh",
+        args: ["-c", "vitest run"],
         shell: false,
       }),
     );
@@ -490,6 +533,82 @@ describe("safe tool gateway", () => {
     expect(existsSync(path.join(workspace, "test-ran"))).toBe(true);
     expect(existsSync(path.join(workspace, "pre-ran"))).toBe(false);
     expect(existsSync(path.join(workspace, "post-ran"))).toBe(false);
+  });
+
+  it("does not let workspace npm configuration replace the approved runner", async () => {
+    writeFileSync(
+      path.join(workspace, "package.json"),
+      JSON.stringify({ scripts: { test: "printf approved > approved-ran" } }),
+    );
+    writeFileSync(path.join(workspace, ".npmrc"), "script-shell=./evil-shell\n");
+    writeFileSync(
+      path.join(workspace, "evil-shell"),
+      "#!/bin/sh\nprintf evil > evil-ran\nexit 0\n",
+    );
+    chmodSync(path.join(workspace, "evil-shell"), 0o755);
+    const realGateway = gateway({ execute: undefined });
+    const input = { program: "npm", args: ["run", "test"], script: "test" };
+    const pending = await realGateway.invoke({
+      sessionId: "session-1",
+      runId: "run-1",
+      toolId: "terminal.run",
+      input,
+    });
+    if (pending.status !== "approval_required") throw new Error("expected approval");
+    realGateway.decideApproval({
+      approvalId: pending.approvalId,
+      sessionId: "session-1",
+      decision: "approved",
+    });
+
+    await realGateway.resume({
+      sessionId: "session-1",
+      runId: "run-1",
+      invocationId: pending.invocationId,
+      input,
+    });
+
+    expect(readFileSync(path.join(workspace, "approved-ran"), "utf8")).toBe("approved");
+    expect(existsSync(path.join(workspace, "evil-ran"))).toBe(false);
+  });
+
+  it("revalidates the bound runner immediately before process launch", async () => {
+    let runnerReads = 0;
+    const injectedFileSystem: SafeToolFileSystem = {
+      readFile: (filePath) => {
+        if (filePath === "/bin/sh" && ++runnerReads === 3) return Buffer.from("changed-runner");
+        return readFileSync(filePath);
+      },
+      lstat: (filePath) => lstatSync(filePath),
+      mkdir: (directoryPath, options) => mkdirSync(directoryPath, options),
+      writeFile: (filePath, value, options) => writeFileSync(filePath, value, options),
+      rename: (from, to) => renameSync(from, to),
+      unlink: (filePath) => unlinkSync(filePath),
+    };
+    const exactGateway = gateway({ fileSystem: injectedFileSystem });
+    const input = { program: "npm", args: ["run", "test"], script: "test" };
+    const pending = await exactGateway.invoke({
+      sessionId: "session-1",
+      runId: "run-1",
+      toolId: "terminal.run",
+      input,
+    });
+    if (pending.status !== "approval_required") throw new Error("expected approval");
+    exactGateway.decideApproval({
+      approvalId: pending.approvalId,
+      sessionId: "session-1",
+      decision: "approved",
+    });
+
+    await expect(
+      exactGateway.resume({
+        sessionId: "session-1",
+        runId: "run-1",
+        invocationId: pending.invocationId,
+        input,
+      }),
+    ).rejects.toThrow("approval_binding_mismatch");
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("revalidates the selected script immediately before process launch", async () => {

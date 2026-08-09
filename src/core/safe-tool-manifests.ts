@@ -67,7 +67,7 @@ const manifests: Record<SafeToolId, SafeToolManifest> = {
   },
   "terminal.read": {
     id: "terminal.read",
-    version: "1.1.0",
+    version: "1.2.0",
     description: "Runs a narrow structured allowlist of read-only local commands.",
     risk: "read",
     sideEffect: "none",
@@ -86,8 +86,8 @@ const manifests: Record<SafeToolId, SafeToolManifest> = {
   },
   "terminal.run": {
     id: "terminal.run",
-    version: "1.1.0",
-    description: "Runs one exact approved npm project script with lifecycle hooks suppressed.",
+    version: "1.2.0",
+    description: "Runs one exact approved project script through a pinned non-login shell.",
     risk: "system",
     sideEffect: "local",
     requiredScopes: ["workspace:write", "process:run"],

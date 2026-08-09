@@ -20,6 +20,7 @@ import {
 } from "./safe-tool-manifests";
 
 const APPROVAL_TTL_MS = 10 * 60 * 1000;
+const SCRIPT_RUNNER = "/bin/sh";
 const EMPTY_SHA256 = createHash("sha256").update("").digest("hex");
 const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const META = /[;&|><`$()\\\r\n]/;
@@ -144,6 +145,10 @@ function digest(value: JsonValue): string {
 }
 
 function textDigest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function bufferDigest(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -444,7 +449,12 @@ function assertTerminalRun(
   root: string,
   input: { program: string; args: string[]; script?: string },
   fs: SafeToolFileSystem,
-): { networkCapable: true; scriptCommand: string; scriptDigest: string } {
+): {
+  networkCapable: true;
+  scriptCommand: string;
+  scriptDigest: string;
+  runner: { program: string; args: string[]; sha256: string; nonLogin: true };
+} {
   if (input.program.includes("/") || input.program.includes("\\")) fail("unsafe_terminal_run");
   try {
     input.args.forEach(assertNoUnsafeArg);
@@ -466,6 +476,12 @@ function assertTerminalRun(
       networkCapable: true,
       scriptCommand: scripts[input.script],
       scriptDigest: textDigest(scripts[input.script]),
+      runner: {
+        program: SCRIPT_RUNNER,
+        args: ["-c"],
+        sha256: bufferDigest(fs.readFile(SCRIPT_RUNNER)),
+        nonLogin: true,
+      },
     };
   }
   fail("unsafe_terminal_run");
@@ -516,6 +532,23 @@ function truncate(value: string, maxBytes: number): string {
   if (Buffer.byteLength(value) <= maxBytes) return value;
   const buffer = Buffer.from(value);
   return `${buffer.subarray(0, Math.max(0, maxBytes - 32)).toString("utf8")}\n…[truncated]`;
+}
+
+function normalizeWorkspacePath(value: string, root: string): string {
+  const jsonEscapedRoot = JSON.stringify(root).slice(1, -1);
+  return value
+    .split(jsonEscapedRoot)
+    .join("<workspace>")
+    .split(root)
+    .join("<workspace>");
+}
+
+function normalizeTerminalReadOutput(output: SafeProcessOutput, root: string): SafeProcessOutput {
+  return {
+    ...output,
+    stdout: normalizeWorkspacePath(output.stdout, root),
+    stderr: normalizeWorkspacePath(output.stderr, root),
+  };
 }
 
 function sanitizeOutput(manifest: SafeToolManifest, output: unknown): JsonValue {
@@ -862,26 +895,26 @@ export class SafeToolGateway {
           timeoutMs: manifest.timeoutMs,
           maxOutputBytes: manifest.maxOutputBytes,
           shell: false,
-        });
+        }).then((output) => normalizeTerminalReadOutput(output, root));
       },
     };
   }
 
   private prepareTerminalRun(root: string, input: JsonValue, manifest: SafeToolManifest): PreparedTool {
     const parsed = input as { program: string; args: string[]; script?: string };
-    const { networkCapable, scriptCommand, scriptDigest } = assertTerminalRun(
+    const { networkCapable, scriptCommand, scriptDigest, runner } = assertTerminalRun(
       root,
       parsed,
       this.fs,
     );
-    const executionArgs = ["run", parsed.script!, "--ignore-scripts"];
     const effectDetails = {
       kind: "terminal_run",
       program: parsed.program,
-      args: executionArgs,
+      args: parsed.args,
       script: parsed.script,
       scriptDigest,
       networkCapable,
+      runner,
     };
     const effect = toJsonValue(effectDetails);
     return {
@@ -901,15 +934,16 @@ export class SafeToolGateway {
         }
         if (
           revalidated.scriptCommand !== scriptCommand ||
-          revalidated.scriptDigest !== scriptDigest
+          revalidated.scriptDigest !== scriptDigest ||
+          stableJson(toJsonValue(revalidated.runner)) !== stableJson(toJsonValue(runner))
         ) {
           throw Object.assign(new Error("approval_binding_mismatch"), { effectStarted: false });
         }
         return this.execute({
-          program: "npm",
-          args: executionArgs,
+          program: runner.program,
+          args: [...runner.args, scriptCommand],
           cwd: root,
-          env: { ...processEnvironment(), npm_config_ignore_scripts: "true" },
+          env: processEnvironment(),
           timeoutMs: manifest.timeoutMs,
           maxOutputBytes: manifest.maxOutputBytes,
           shell: false,

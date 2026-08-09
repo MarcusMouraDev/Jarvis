@@ -1,18 +1,12 @@
 "use client";
 
-import { useRef } from "react";
 import type { CSSProperties } from "react";
 import type { AgentState } from "@/core/types";
-import {
-  IDLE_PRESENCE_VISUAL,
-  resolvePresenceVisual,
-  type PresenceVisual,
-} from "@/state/presence-config";
+import { PRESENCE_BY_STATE } from "@/state/presence-config";
 
 interface PresenceFallbackProps {
   state: AgentState;
   animate?: boolean;
-  previousVisual?: PresenceVisual;
 }
 
 const NODE_POSITIONS = [
@@ -55,23 +49,13 @@ const LINK_LINES = [
 export function PresenceFallback({
   state,
   animate = false,
-  previousVisual,
 }: PresenceFallbackProps) {
-  const lastRef = useRef<PresenceVisual>(previousVisual ?? IDLE_PRESENCE_VISUAL);
-  const visual = resolvePresenceVisual(state, lastRef.current);
-  if (state !== "failure") {
-    lastRef.current = visual;
-  } else {
-    lastRef.current = visual;
-  }
-
+  // WebGL path owns true failure-hue preserve; CSS fallback dessaturates idle base.
+  const base = PRESENCE_BY_STATE[state === "failure" ? "idle" : state];
   const style = {
-    "--neural-a": visual.colorA,
-    "--neural-b": visual.colorB,
-    filter:
-      visual.saturation < 0.99
-        ? `saturate(${visual.saturation}) contrast(1.08)`
-        : undefined,
+    "--neural-a": base.colorA,
+    "--neural-b": base.colorB,
+    filter: state === "failure" ? "saturate(0.35) contrast(1.08)" : undefined,
   } as CSSProperties;
 
   return (

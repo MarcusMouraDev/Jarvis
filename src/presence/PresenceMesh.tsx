@@ -241,12 +241,27 @@ export function PresenceMesh({
     };
   }, [layered]);
 
-  const coreUniforms = useMemo(() => makeNodeUniforms(initial, "core"), []);
-  const cortexUniforms = useMemo(() => makeNodeUniforms(initial, "cortex"), []);
-  const microUniforms = useMemo(() => makeNodeUniforms(initial, "micro"), []);
-  const coreLinkUniforms = useMemo(() => makeLinkUniforms(initial), []);
+  const coreUniforms = useMemo(
+    () => makeNodeUniforms(PRESENCE_BY_STATE.idle, "core"),
+    [],
+  );
+  const cortexUniforms = useMemo(
+    () => makeNodeUniforms(PRESENCE_BY_STATE.idle, "cortex"),
+    [],
+  );
+  const microUniforms = useMemo(
+    () => makeNodeUniforms(PRESENCE_BY_STATE.idle, "micro"),
+    [],
+  );
+  const coreLinkUniforms = useMemo(
+    () => makeLinkUniforms(PRESENCE_BY_STATE.idle),
+    [],
+  );
   const outerLinkUniforms = useMemo(
-    () => ({ ...makeLinkUniforms(initial), uLayerOpacity: { value: 0.55 } }),
+    () => ({
+      ...makeLinkUniforms(PRESENCE_BY_STATE.idle),
+      uLayerOpacity: { value: 0.55 },
+    }),
     [],
   );
 

@@ -157,7 +157,7 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
 
   return (
     <aside
-      className="absolute inset-x-0 bottom-0 top-12 z-40 flex flex-col bg-surface-0/96 shadow-[var(--shadow-panel)] backdrop-blur-md sm:top-14"
+      className="panel-z absolute inset-x-0 bottom-0 top-[var(--instrument-height,3.5rem)] z-40 flex flex-col bg-surface-0/96 shadow-[var(--shadow-panel)] backdrop-blur-md"
       role="dialog"
       aria-modal="true"
       aria-label="Memória"
@@ -174,6 +174,18 @@ export function MemoryPanel({ open, onClose }: MemoryPanelProps) {
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4 text-sm">
+        {enabled === null ? (
+          <p className="text-ink-2" role="status">
+            {loading ? "Carregando memória…" : "Preparando memória…"}
+          </p>
+        ) : null}
+
+        {error ? (
+          <p className="text-[var(--state-danger)]" role="alert">
+            Falha ao carregar memória: {error}
+          </p>
+        ) : null}
+
         {enabled === false ? (
           <p className="text-ink-2">
             Memória desativada. Defina <code className="font-mono">JARVIS_MEMORY=1</code>{" "}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { PrivacyClass } from "@/core/types";
 
 interface SafeInstrumentBarProps {
@@ -7,6 +8,7 @@ interface SafeInstrumentBarProps {
   privacyClass: PrivacyClass;
   model: { provider: string; model: string } | null;
   status: string | null;
+  onHeightChange?: (height: number) => void;
 }
 
 export function SafeInstrumentBar({
@@ -14,9 +16,27 @@ export function SafeInstrumentBar({
   privacyClass,
   model,
   status,
+  onHeightChange,
 }: SafeInstrumentBarProps) {
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!ref.current || !onHeightChange) return;
+    const el = ref.current;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height ?? el.offsetHeight;
+      onHeightChange(h);
+    });
+    ro.observe(el);
+    onHeightChange(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [onHeightChange]);
+
   return (
-    <header className="chrome-z shrink-0 border-b border-surface-2/80 bg-surface-0/90 px-3 py-2 text-[11px] font-mono text-ink-2 backdrop-blur-sm sm:px-4 sm:text-xs">
+    <header
+      ref={ref}
+      className="chrome-z shrink-0 border-b border-surface-2/80 bg-surface-0/90 px-3 py-2 text-[11px] font-mono text-ink-2 backdrop-blur-sm sm:px-4 sm:text-xs"
+    >
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2">
           <span className="text-ink-1">{privacyClass}</span>

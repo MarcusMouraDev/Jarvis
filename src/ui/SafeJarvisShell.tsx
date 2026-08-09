@@ -15,8 +15,7 @@ import {
 } from "@/lib/safe-core-client";
 import {
   IDLE_PRESENCE_VISUAL,
-  resolvePresenceVisual,
-  type PresenceVisual,
+  PRESENCE_BY_STATE,
 } from "@/state/presence-config";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useWebGLAvailable } from "@/hooks/use-webgl";
@@ -69,21 +68,33 @@ export function SafeJarvisShell() {
   const webglAvailable = useWebGLAvailable();
 
   const runIsActive = busy || isActiveRun(runStatus) || isActiveRun(ui.runStatus);
-  const lastPresenceRef = useRef<PresenceVisual>(IDLE_PRESENCE_VISUAL);
-  const presenceVisual = resolvePresenceVisual(ui.presence, lastPresenceRef.current);
-  if (ui.presence !== "failure") {
-    lastPresenceRef.current = presenceVisual;
-  }
-  const glow = presenceVisual.colorA;
+  const [instrumentHeight, setInstrumentHeight] = useState(56);
+  const onInstrumentHeight = useCallback((h: number) => {
+    setInstrumentHeight(Math.max(40, Math.round(h)));
+  }, []);
+
+  const [glow, setGlow] = useState(IDLE_PRESENCE_VISUAL.colorA);
+
+  const commitUi = useCallback((next: SafeRunUiState) => {
+    setUi(next);
+    setGlow((prev) =>
+      next.presence === "failure"
+        ? prev
+        : PRESENCE_BY_STATE[next.presence].colorA,
+    );
+  }, []);
 
   const stopStream = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);
 
-  const applyEvents = useCallback((events: readonly SafeEventEnvelope[]) => {
-    setUi(reduceSafeRun(events));
-  }, []);
+  const applyEvents = useCallback(
+    (events: readonly SafeEventEnvelope[]) => {
+      commitUi(reduceSafeRun(events));
+    },
+    [commitUi],
+  );
 
   const connectStream = useCallback(
     async (activeRunId: string, lastEventId: string | null) => {
@@ -108,6 +119,11 @@ export function SafeJarvisShell() {
               protocolError: next.protocolError,
             };
             if (next.runStatus) setRunStatus(next.runStatus);
+            setGlow((prev) =>
+              next.presence === "failure"
+                ? prev
+                : PRESENCE_BY_STATE[next.presence].colorA,
+            );
             return next;
           });
           if (local.protocolError === "sequence_gap") {
@@ -233,6 +249,7 @@ export function SafeJarvisShell() {
     setUserPrompt(prompt);
     setInput("");
     setUi(initialSafeRunState());
+    setGlow(IDLE_PRESENCE_VISUAL.colorA);
     try {
       const response = await safeCoreFetch("/api/runs", {
         method: "POST",
@@ -350,8 +367,13 @@ export function SafeJarvisShell() {
 
   return (
     <div
-      className="safe-jarvis-shell relative flex h-dvh flex-col overflow-x-clip"
-      style={{ "--state-glow": glow } as React.CSSProperties}
+      className="safe-jarvis-shell relative flex min-h-dvh flex-col overflow-x-clip"
+      style={
+        {
+          "--state-glow": glow,
+          "--instrument-height": `${instrumentHeight}px`,
+        } as React.CSSProperties
+      }
     >
       <div className="shell-vignette" aria-hidden />
       <SafeInstrumentBar
@@ -359,6 +381,7 @@ export function SafeJarvisShell() {
         privacyClass={privacyClass}
         model={ui.effectiveModel}
         status={runStatus ?? ui.runStatus}
+        onHeightChange={onInstrumentHeight}
       />
       <main className="relative z-20 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 pt-3 sm:px-4 sm:pt-4">
         <div className="flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">

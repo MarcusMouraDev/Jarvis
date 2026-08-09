@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { resolvePaletteAction } from "./command-palette-run";
+import { useDialogFocus } from "./use-dialog-focus";
 
 export interface PaletteSkill {
   name: string;
@@ -105,21 +107,17 @@ export function CommandPalette({
   }, [query, skills, runs]);
 
   const safeActive = items.length === 0 ? 0 : Math.min(active, items.length - 1);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(true, dialogRef, onClose);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const runActive = (shift: boolean) => {
-    const item = items[safeActive];
-    if (!item) return;
-    if (item.group === "skills") {
-      onAction("skill-use", { skill: item.skill.name, shift });
-    } else if (item.group === "commands") {
-      onAction(item.action);
-    } else {
-      onAction("show-run", { skill: item.run.id });
-    }
+  const runItem = (item: PaletteItem | undefined, shift: boolean) => {
+    const resolved = resolvePaletteAction(item, shift);
+    if (!resolved) return;
+    onAction(resolved.action, resolved.meta);
   };
 
   const onRowPointer = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -145,6 +143,7 @@ export function CommandPalette({
       }}
     >
       <div
+        ref={dialogRef}
         className="elev-3 flex w-full max-w-xl flex-col overflow-hidden rounded-xl bg-surface-1"
         role="dialog"
         aria-modal="true"
@@ -178,7 +177,7 @@ export function CommandPalette({
             }
             if (e.key === "Enter") {
               e.preventDefault();
-              runActive(e.shiftKey);
+              runItem(items[safeActive], e.shiftKey);
             }
           }}
           aria-controls="palette-list"
@@ -217,7 +216,7 @@ export function CommandPalette({
                         onPointerMove={onRowPointer}
                         onClick={(e) => {
                           setActive(index);
-                          runActive(e.shiftKey);
+                          runItem(item, e.shiftKey);
                         }}
                       >
                         <span className="text-sm text-ink-0">

@@ -18,8 +18,7 @@ import {
 } from "@/lib/shell-client";
 import {
   IDLE_PRESENCE_VISUAL,
-  resolvePresenceVisual,
-  type PresenceVisual,
+  PRESENCE_BY_STATE,
 } from "@/state/presence-config";
 import { AgentStateMachine } from "@/state/agent-state";
 import { useAudioLevel } from "@/audio/use-audio-level";
@@ -107,12 +106,12 @@ export function JarvisShell() {
     enabled: !reducedMotion,
   });
 
-  const lastPresenceRef = useRef<PresenceVisual>(IDLE_PRESENCE_VISUAL);
-  const presenceVisual = resolvePresenceVisual(state, lastPresenceRef.current);
-  if (state !== "failure") {
-    lastPresenceRef.current = presenceVisual;
-  }
-  const glow = presenceVisual.colorA;
+  const [instrumentHeight, setInstrumentHeight] = useState(56);
+  const onInstrumentHeight = useCallback((h: number) => {
+    setInstrumentHeight(Math.max(40, Math.round(h)));
+  }, []);
+
+  const [glow, setGlow] = useState(IDLE_PRESENCE_VISUAL.colorA);
   const panelOpen = historyOpen || memoryOpen || terminalOpen || paletteOpen;
 
   const go = useCallback(
@@ -122,7 +121,11 @@ export function JarvisShell() {
       } catch {
         machine.force(to);
       }
-      setState(machine.current);
+      const next = machine.current;
+      setState(next);
+      setGlow((prev) =>
+        next === "failure" ? prev : PRESENCE_BY_STATE[next].colorA,
+      );
     },
     [machine],
   );
@@ -276,6 +279,14 @@ export function JarvisShell() {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        const editable =
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target?.isContentEditable;
+        if (editable) return;
         e.preventDefault();
         setVoiceOn((v) => !v);
         return;
@@ -893,8 +904,13 @@ export function JarvisShell() {
 
   return (
     <div
-      className="relative flex h-dvh flex-col overflow-x-clip"
-      style={{ "--state-glow": glow } as React.CSSProperties}
+      className="relative flex min-h-dvh flex-col overflow-x-clip"
+      style={
+        {
+          "--state-glow": glow,
+          "--instrument-height": `${instrumentHeight}px`,
+        } as React.CSSProperties
+      }
     >
       <div className="shell-vignette" aria-hidden />
 
@@ -907,6 +923,7 @@ export function JarvisShell() {
         budgetUsd={BUDGET_USD}
         voiceOn={voiceOn}
         micPermission={micPermission}
+        onHeightChange={onInstrumentHeight}
       />
 
       <main className="relative z-20 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 pt-3 sm:px-4 sm:pt-4">
@@ -973,9 +990,11 @@ export function JarvisShell() {
         value={input}
         chips={composerChips}
         disabled={busy || Boolean(pendingRisk) || Boolean(firstUseProvider) || Boolean(pendingCloudFallback)}
+        busy={busy}
         onChange={setInput}
         onChipsChange={setComposerChips}
         onSubmit={() => void handleSubmit()}
+        onCancel={cancelActive}
         skillCatalog={paletteSkills}
         modelAliases={modelAliases}
       />

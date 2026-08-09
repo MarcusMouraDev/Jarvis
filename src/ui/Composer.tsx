@@ -21,6 +21,8 @@ interface ComposerProps {
   onChange: (value: string) => void;
   onChipsChange?: (chips: ComposerChip[]) => void;
   onSubmit: () => void;
+  onCancel?: () => void;
+  busy?: boolean;
   skillCatalog?: SkillCatalogItem[];
   modelAliases?: string[];
 }
@@ -49,6 +51,8 @@ export function Composer({
   onChange,
   onChipsChange,
   onSubmit,
+  onCancel,
+  busy = false,
   skillCatalog = EMPTY_SKILL_CATALOG,
   modelAliases = EMPTY_MODEL_ALIASES,
 }: ComposerProps) {
@@ -316,17 +320,28 @@ export function Composer({
             list="slash-hints"
             autoComplete="off"
           />
-          <button
-            type="submit"
-            disabled={disabled || !value.trim()}
-            className="btn-press shrink-0 rounded-lg bg-accent-listen px-4 py-2.5 text-sm font-medium whitespace-nowrap text-surface-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-listen disabled:opacity-40"
-          >
-            Enviar
-          </button>
+          {busy && onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label="Cancelar resposta"
+              className="btn-press min-h-11 min-w-11 shrink-0 rounded-lg border border-[var(--state-danger)] px-3 py-2.5 text-sm font-medium whitespace-nowrap text-[var(--state-danger)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+            >
+              Parar
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={disabled || !value.trim()}
+              className="btn-press min-h-11 min-w-11 shrink-0 rounded-lg bg-accent-listen px-4 py-2.5 text-sm font-medium whitespace-nowrap text-surface-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-listen disabled:opacity-40"
+            >
+              Enviar
+            </button>
+          )}
         </div>
       </div>
       <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] tracking-wide text-ink-2/80 sm:text-[11px]">
-        ⌘K · hist ^H · voz ^V · @ / # · cancelar Esc
+        {busy ? "recebendo · Esc cancela" : "⌘K · hist ^H · voz ^V · @ / # · cancelar Esc"}
       </p>
       <datalist id="slash-hints">
         {HINTS.map((h) => (

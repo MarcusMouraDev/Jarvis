@@ -35,21 +35,23 @@ interface PresenceMeshProps {
   pointerRef: React.RefObject<{ x: number; y: number; active: boolean }>;
 }
 
-const LAYER_SCALE: Record<NeuralLayer, number> = {
+const LAYER_SCALE: Record<NeuralLayer | "stardust", number> = {
   core: 0.95,
   cortex: 0.62,
   micro: 0.32,
+  stardust: 0.18,
 };
 
-const LAYER_OPACITY: Record<NeuralLayer, number> = {
+const LAYER_OPACITY: Record<NeuralLayer | "stardust", number> = {
   core: 0.92,
   cortex: 0.78,
   micro: 0.52,
+  stardust: 0.28,
 };
 
 function makeNodeUniforms(
   initial: { colorA: string; colorB: string; activation: number; pulse: number; coherence: number },
-  layer: NeuralLayer,
+  layer: NeuralLayer | "stardust",
 ) {
   return {
     uTime: { value: 0 },
@@ -93,22 +95,24 @@ function makeLinkUniforms(initial: {
 
 function OrbitRings() {
   const { rings, dust } = useMemo(() => {
-    const ringGeos = [0.92, 1.05, 1.18, 1.3, 1.4].map((r, i) => {
+    // Round silhouette — radii near sphere, mild tilt (not flattened rings)
+    const ringGeos = [0.98, 1.05, 1.12, 1.18].map((r, i) => {
       const curve = new THREE.EllipseCurve(
         0,
         0,
         r,
-        r * (0.88 + (i % 3) * 0.04),
+        r * (0.96 + (i % 2) * 0.02),
         0,
         Math.PI * 2,
         false,
-        i * 0.4,
+        i * 0.25,
       );
-      const pts = curve.getPoints(160);
+      const pts = curve.getPoints(180);
       const positions = new Float32Array(pts.length * 3);
+      const yScale = 0.55 + (i % 2) * 0.12;
       for (let j = 0; j < pts.length; j += 1) {
         positions[j * 3] = pts[j].x;
-        positions[j * 3 + 1] = pts[j].y * (0.22 + (i % 2) * 0.1);
+        positions[j * 3 + 1] = pts[j].y * yScale * 0.35;
         positions[j * 3 + 2] = pts[j].y;
       }
       const g = new THREE.BufferGeometry();
@@ -116,17 +120,16 @@ function OrbitRings() {
       return g;
     });
 
-    // Orbital dust beads like the reference rings of light
-    const dustCount = 420;
+    const dustCount = 480;
     const dustPos = new Float32Array(dustCount * 3);
     const dustPhase = new Float32Array(dustCount);
     for (let i = 0; i < dustCount; i += 1) {
-      const ring = 0.95 + (i % 5) * 0.1;
+      const ring = 0.98 + (i % 4) * 0.065;
       const a = (i / dustCount) * Math.PI * 2 * 7;
-      const yTilt = Math.sin(i * 0.37) * 0.28;
+      const yTilt = Math.sin(i * 0.37) * 0.14;
       dustPos[i * 3] = Math.cos(a) * ring;
       dustPos[i * 3 + 1] = yTilt * ring;
-      dustPos[i * 3 + 2] = Math.sin(a) * ring * 0.92;
+      dustPos[i * 3 + 2] = Math.sin(a) * ring;
       dustPhase[i] = (i % 97) / 97;
     }
     const dustGeo = new THREE.BufferGeometry();
@@ -141,13 +144,13 @@ function OrbitRings() {
   );
 
   return (
-    <group rotation={[0.55, 0.25, 0.2]}>
+    <group rotation={[0.28, 0.18, 0.1]}>
       {rings.map((g, i) => (
         <lineLoop key={i} geometry={g}>
           <lineBasicMaterial
             color="#b86a32"
             transparent
-            opacity={0.12 - i * 0.015}
+            opacity={0.1 - i * 0.014}
             depthWrite={false}
           />
         </lineLoop>
@@ -177,6 +180,7 @@ export function PresenceMesh({
   const coreMatRef = useRef<THREE.ShaderMaterial>(null);
   const cortexMatRef = useRef<THREE.ShaderMaterial>(null);
   const microMatRef = useRef<THREE.ShaderMaterial>(null);
+  const stardustMatRef = useRef<THREE.ShaderMaterial>(null);
   const coreLinkMatRef = useRef<THREE.ShaderMaterial>(null);
   const outerLinkMatRef = useRef<THREE.ShaderMaterial>(null);
   const spring = useRef({ x: 0, y: 0, vx: 0, vy: 0, strength: 0 });
@@ -226,6 +230,19 @@ export function PresenceMesh({
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(layered.micro.positions, 3));
     g.setAttribute("aPhase", new THREE.BufferAttribute(layered.micro.phases, 1));
+    return g;
+  }, [layered]);
+
+  const stardustGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute(
+      "position",
+      new THREE.BufferAttribute(layered.stardust.positions, 3),
+    );
+    g.setAttribute(
+      "aPhase",
+      new THREE.BufferAttribute(layered.stardust.phases, 1),
+    );
     return g;
   }, [layered]);
 
@@ -295,6 +312,10 @@ export function PresenceMesh({
     () => makeNodeUniforms(PRESENCE_BY_STATE.idle, "micro"),
     [],
   );
+  const stardustUniforms = useMemo(
+    () => makeNodeUniforms(PRESENCE_BY_STATE.idle, "stardust"),
+    [],
+  );
   const coreLinkUniforms = useMemo(
     () => makeLinkUniforms(PRESENCE_BY_STATE.idle),
     [],
@@ -312,6 +333,7 @@ export function PresenceMesh({
       coreMatRef.current,
       cortexMatRef.current,
       microMatRef.current,
+      stardustMatRef.current,
       coreLinkMatRef.current,
       outerLinkMatRef.current,
     ];
@@ -341,7 +363,7 @@ export function PresenceMesh({
       current.current.saturation = visual.saturation;
     }
 
-    const nodeMats = [coreMatRef, cortexMatRef, microMatRef];
+    const nodeMats = [coreMatRef, cortexMatRef, microMatRef, stardustMatRef];
     for (const ref of nodeMats) {
       const mat = ref.current;
       if (!mat) continue;
@@ -380,6 +402,7 @@ export function PresenceMesh({
       !coreMatRef.current ||
       !cortexMatRef.current ||
       !microMatRef.current ||
+      !stardustMatRef.current ||
       !coreLinkMatRef.current ||
       !outerLinkMatRef.current
     ) {
@@ -487,6 +510,7 @@ export function PresenceMesh({
     syncNode(coreMatRef.current);
     syncNode(cortexMatRef.current);
     syncNode(microMatRef.current);
+    syncNode(stardustMatRef.current);
     syncLink(coreLinkMatRef.current);
     syncLink(outerLinkMatRef.current);
 
@@ -496,6 +520,7 @@ export function PresenceMesh({
         coreMatRef.current,
         cortexMatRef.current,
         microMatRef.current,
+        stardustMatRef.current,
         coreLinkMatRef.current,
         outerLinkMatRef.current,
       ]) {
@@ -545,6 +570,17 @@ export function PresenceMesh({
           vertexShader={nodeVertexShader}
           fragmentShader={nodeFragmentShader}
           uniforms={microUniforms}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+      <points geometry={stardustGeo}>
+        <shaderMaterial
+          ref={stardustMatRef}
+          vertexShader={nodeVertexShader}
+          fragmentShader={nodeFragmentShader}
+          uniforms={stardustUniforms}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}

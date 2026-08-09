@@ -65,7 +65,7 @@ describe("core-store", () => {
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all()
         .map((row) => (row as { version: number }).version),
-    ).toEqual([1, 2, 3]);
+    ).toEqual([1, 2, 3, 4]);
     expect(
       database
         .prepare("PRAGMA table_info(sessions)")
@@ -371,6 +371,15 @@ describe("core-store", () => {
         type: "run.started",
         payload: { token: "do-not-store", ok: true },
       }).seq,
+    ).toBe(1);
+    expect(store.replayEvents("run-1")[0]?.v).toBe(1);
+    expect(
+      (
+        store
+          .getDatabaseForTests()
+          .prepare("SELECT protocol_version AS version FROM events WHERE event_id = ?")
+          .get("event-1") as { version: number }
+      ).version,
     ).toBe(1);
     expect(
       store.appendEvent({

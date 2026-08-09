@@ -23,7 +23,6 @@ import {
   updateSessionRequestSchema,
   type SafeAgentSummary,
   type SafeApprovalView,
-  type SafeEventEnvelope,
   type SafeRunSnapshot,
   type SafeRunSummary,
   type SafeWorkspaceChoice,
@@ -33,6 +32,7 @@ import type {
   ExecuteSafeRunInput,
   SafeOrchestratorResult,
 } from "./safe-orchestrator";
+import { toSafeEventEnvelope } from "./safe-event-protocol";
 import { resolveWorkspace } from "./workspace-policy";
 
 interface ContinuationBinding {
@@ -147,18 +147,6 @@ function publicJson(value: JsonValue, run: CoreRun): JsonValue {
     return entry;
   };
   return visit(redactStructured(value));
-}
-
-function eventEnvelope(event: CoreEvent, run: CoreRun): SafeEventEnvelope {
-  return {
-    v: 1,
-    eventId: event.eventId,
-    runId: event.runId,
-    seq: event.seq,
-    ts: event.createdAt,
-    type: event.type,
-    payload: publicJson(event.payload, run),
-  };
 }
 
 function approvalPreview(events: CoreEvent[], approvalId: string): JsonValue {
@@ -337,7 +325,12 @@ export class SafeCoreService {
           content: message.content,
           createdAt: message.createdAt,
         })),
-      events: events.map((event) => eventEnvelope(event, run)),
+      events: events.map((event) =>
+        toSafeEventEnvelope(
+          event,
+          workspacePath(run) ? [workspacePath(run)!] : [],
+        ),
+      ),
       approvals,
     };
   }

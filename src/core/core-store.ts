@@ -52,6 +52,7 @@ export interface CoreMessage {
 }
 
 export interface CoreEvent {
+  v: 1;
   eventId: string;
   runId: string;
   seq: number;
@@ -313,6 +314,14 @@ const migrations = [
     END;
 `,
   },
+  {
+    version: 4,
+    sql: `
+  ALTER TABLE events
+    ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 1
+    CHECK (protocol_version = 1);
+`,
+  },
 ] as const;
 
 function now(): string {
@@ -441,6 +450,7 @@ function mapMessage(row: unknown): CoreMessage | null {
 
 function mapEvent(row: unknown): CoreEvent {
   const value = row as {
+    protocol_version: number;
     event_id: string;
     run_id: string;
     seq: number;
@@ -448,7 +458,11 @@ function mapEvent(row: unknown): CoreEvent {
     payload_json: string;
     created_at: string;
   };
+  if (value.protocol_version !== 1) {
+    throw new Error("unsupported_event_protocol_version");
+  }
   return {
+    v: 1,
     eventId: value.event_id,
     runId: value.run_id,
     seq: value.seq,

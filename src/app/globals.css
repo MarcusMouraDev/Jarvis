@@ -294,11 +294,41 @@
     }
   }
 
+  .safe-approval-disclosure {
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .safe-approval-disclosure[open] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .safe-approval-disclosure:not([open]) {
+    opacity: 0.92;
+  }
+
+  .safe-agent-selector select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  @media (max-width: 320px) {
+    .safe-approval-card {
+      padding: 0.65rem;
+    }
+
+    .safe-approval-card button {
+      min-height: 2rem;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .neural-fallback--breathe .neural-fallback__sphere,
     .presence-fallback,
-    .response-reveal {
+    .response-reveal,
+    .safe-approval-disclosure {
       animation: none;
+      transition: none;
     }
 
     .btn-press:active:not(:disabled),

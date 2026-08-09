@@ -25,6 +25,10 @@ interface ComposerProps {
   modelAliases?: string[];
 }
 
+const EMPTY_CHIPS: ComposerChip[] = [];
+const EMPTY_SKILL_CATALOG: SkillCatalogItem[] = [];
+const EMPTY_MODEL_ALIASES: string[] = [];
+
 const HINTS = [
   "/select model gemini",
   "/select model codex",
@@ -41,12 +45,12 @@ const HINTS = [
 export function Composer({
   value,
   disabled,
-  chips = [],
+  chips = EMPTY_CHIPS,
   onChange,
   onChipsChange,
   onSubmit,
-  skillCatalog = [],
-  modelAliases = [],
+  skillCatalog = EMPTY_SKILL_CATALOG,
+  modelAliases = EMPTY_MODEL_ALIASES,
 }: ComposerProps) {
   const listboxId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,7 +83,7 @@ export function Composer({
 
     async function load() {
       if (!trigger) {
-        setSuggestions([]);
+        setSuggestions((current) => (current.length === 0 ? current : []));
         return;
       }
 

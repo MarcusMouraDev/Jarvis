@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, type ReactNode } from "react";
 import type { MicPermission, PrivacyClass } from "@/core/types";
 import { MIC_PERMISSION_LABELS } from "@/audio/mic-permission";
 
@@ -11,7 +12,10 @@ interface InstrumentBarProps {
   spentUsd: number;
   budgetUsd: number;
   voiceOn: boolean;
+  clapWakeOn: boolean;
   micPermission: MicPermission;
+  extra?: ReactNode;
+  onHeightChange?: (height: number) => void;
 }
 
 function formatUsd(n: number): string {
@@ -30,8 +34,12 @@ export function InstrumentBar({
   spentUsd,
   budgetUsd,
   voiceOn,
+  clapWakeOn,
   micPermission,
+  extra,
+  onHeightChange,
 }: InstrumentBarProps) {
+  const ref = useRef<HTMLElement>(null);
   const micShort =
     micPermission === "granted"
       ? "mic:ok"
@@ -39,8 +47,23 @@ export function InstrumentBar({
         ? "mic:off"
         : "mic:?";
 
+  useEffect(() => {
+    if (!ref.current || !onHeightChange) return;
+    const el = ref.current;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height ?? el.offsetHeight;
+      onHeightChange(h);
+    });
+    ro.observe(el);
+    onHeightChange(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [onHeightChange]);
+
   return (
-    <header className="chrome-z shrink-0 border-b border-surface-2/80 bg-surface-0/90 px-3 py-2 text-[11px] font-mono text-ink-2 backdrop-blur-sm sm:px-4 sm:text-xs">
+    <header
+      ref={ref}
+      className="chrome-z shrink-0 border-b border-surface-2/80 bg-surface-0/90 px-3 py-2 text-[11px] font-mono text-ink-2 backdrop-blur-sm sm:px-4 sm:text-xs"
+    >
       <div className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="whitespace-nowrap text-ink-1">{privacyClass}</span>
@@ -65,6 +88,8 @@ export function InstrumentBar({
             {formatUsd(spentUsd)} / {formatUsd(budgetUsd)}
           </span>
           <span className="whitespace-nowrap">{voiceOn ? "voz:on" : "voz:off"}</span>
+          <span className="whitespace-nowrap">{clapWakeOn ? "palmas:on" : "palmas:off"}</span>
+          {extra}
         </div>
       </div>
     </header>

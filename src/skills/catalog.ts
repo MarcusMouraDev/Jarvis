@@ -31,9 +31,23 @@ function parseFrontmatter(raw: string): {
   return { frontmatter, body };
 }
 
+const SOURCE_RANK: Record<SkillMeta["source"], number> = {
+  project: 6,
+  codex: 5,
+  claude: 5,
+  agents: 4,
+  skills: 3,
+  "skills-cursor": 2,
+  extra: 1,
+};
+
 function sourceLabel(dir: string): SkillMeta["source"] {
-  if (dir.includes(`${join(".cursor", "skills-cursor")}`)) return "skills-cursor";
-  if (dir.endsWith(`${join(".cursor", "skills")}`) || dir.includes("/.cursor/skills")) {
+  const normalized = dir.replaceAll("\\", "/");
+  if (normalized.includes("/.cursor/skills-cursor")) return "skills-cursor";
+  if (normalized.includes("/.codex/skills")) return "codex";
+  if (normalized.includes("/.claude/skills")) return "claude";
+  if (normalized.includes("/.agents/skills")) return "agents";
+  if (normalized.includes("/.cursor/skills")) {
     if (dir.startsWith(homedir())) return "skills";
     return "project";
   }
@@ -45,6 +59,9 @@ export function defaultSkillRoots(): string[] {
   const roots = [
     join(home, ".cursor", "skills-cursor"),
     join(home, ".cursor", "skills"),
+    join(home, ".codex", "skills"),
+    join(home, ".claude", "skills"),
+    join(home, ".agents", "skills"),
     resolve(process.cwd(), ".cursor", "skills"),
   ];
   const extra = process.env.CURSOR_SKILLS_DIRS?.split(":")
@@ -82,8 +99,7 @@ export function listSkills(roots = defaultSkillRoots()): SkillMeta[] {
         // Prefer project > personal skills > built-in skills-cursor when names collide.
         const source = sourceLabel(root);
         const existing = byName.get(name);
-        const rank = { project: 3, skills: 2, "skills-cursor": 1, extra: 0 } as const;
-        if (!existing || rank[source] >= rank[existing.source]) {
+        if (!existing || SOURCE_RANK[source] >= SOURCE_RANK[existing.source]) {
           byName.set(name, {
             name,
             description: frontmatter.description || "",

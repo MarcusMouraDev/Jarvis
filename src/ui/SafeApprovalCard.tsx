@@ -59,15 +59,16 @@ export function SafeApprovalCard({
       <div className="mt-3 flex flex-wrap justify-end gap-2">
         <button
           type="button"
-          className="btn-press rounded-md px-3 py-1.5 text-xs text-ink-2 hover:text-ink-0"
+          className="btn-press min-h-11 min-w-11 rounded-md px-3 py-1.5 text-xs text-ink-2 hover:text-ink-0"
           disabled={busy}
           onClick={() => onDecision("denied")}
+          autoFocus
         >
           Recusar
         </button>
         <button
           type="button"
-          className="btn-press rounded-md bg-accent-ask px-3 py-1.5 text-xs font-medium text-surface-0"
+          className="btn-press min-h-11 min-w-11 rounded-md bg-accent-ask px-3 py-1.5 text-xs font-medium text-surface-0"
           disabled={busy}
           onClick={() => onDecision("approved")}
         >

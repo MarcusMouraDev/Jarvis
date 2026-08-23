@@ -1,4 +1,4 @@
-/** Neuron point shaders — soft discs with phase-driven activation + pointer pull. */
+/** Neuron point shaders — dense synaptic mass, depth + rim, controlled bloom. */
 export const nodeVertexShader = /* glsl */ `
 attribute float aPhase;
 
@@ -9,36 +9,53 @@ uniform float uPulse;
 uniform float uReducedMotion;
 uniform vec3 uPointer;
 uniform float uPointerStrength;
+uniform float uPointScale;
+uniform float uTurbulence;
 
 varying float vGlow;
 varying float vPhase;
+varying float vCore;
+varying float vDepth;
+varying float vRim;
 
 void main() {
   vPhase = aPhase;
+  float radial = length(position);
+  // núcleo quente estreito — não lava a esfera toda
+  vCore = smoothstep(0.55, 0.08, radial);
+  // rim accent — define contorno da esfera sem aro sólido
+  vRim = smoothstep(0.88, 0.98, radial) * (1.0 - smoothstep(1.05, 1.18, radial));
+
   float breathe = uReducedMotion > 0.5
     ? 0.35
-    : 0.55 + 0.45 * sin(uTime * (1.4 + uPulse) + aPhase * 6.2831853);
-  float audio = uLevel * (0.65 + aPhase * 0.55);
+    : 0.5 + 0.35 * sin(uTime * (1.35 + uPulse * 0.8 + uTurbulence * 0.5) + aPhase * 6.2831853);
+  float audio = uLevel * (0.5 + aPhase * 0.4);
   float gate = smoothstep(
-    1.0 - clamp(uActivation, 0.05, 1.0) - 0.2,
+    1.0 - clamp(uActivation, 0.05, 1.0) - 0.18,
     1.0 - clamp(uActivation, 0.05, 1.0) + 0.55,
-    aPhase + audio * 0.3
+    aPhase + audio * 0.2 + vCore * 0.15
   );
-  vGlow = clamp(0.45 + gate * 0.85 + breathe * 0.35 * max(gate, 0.35) + audio * 0.45, 0.2, 1.8);
+  vGlow = clamp(0.4 + gate * 0.7 + breathe * 0.28 * max(gate, 0.35) + audio * 0.28 + vCore * 0.35, 0.2, 1.45);
 
   vec3 pos = position;
-  vec3 n = normalize(position);
+  vec3 n = normalize(position + 1e-5);
   float pull = 0.0;
   if (uPointerStrength > 0.001) {
     pull = smoothstep(0.45, 1.0, dot(n, normalize(uPointer)));
-    pos += n * pull * uPointerStrength * 0.18;
-    vGlow += pull * uPointerStrength * 0.55;
+    pos += n * pull * uPointerStrength * 0.08;
+    vGlow += pull * uPointerStrength * 0.28;
+  }
+  if (uReducedMotion < 0.5 && uTurbulence > 0.01) {
+    pos += n * sin(uTime * (2.0 + aPhase * 3.2) + aPhase * 12.0) * uTurbulence * 0.018;
   }
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+  // profundidade: pontos atrás do centro menores/mais fracos
+  vDepth = clamp(0.55 + (-mv.z) * 0.12, 0.45, 1.15);
   gl_Position = projectionMatrix * mv;
-  float size = (5.5 + vGlow * 14.0 + pull * uPointerStrength * 8.0) * (320.0 / max(-mv.z, 0.001));
-  gl_PointSize = clamp(size, 3.0, 40.0);
+  float size = (1.9 + vGlow * 5.2 + vCore * 2.8 + vRim * 1.4 + pull * uPointerStrength * 3.0)
+    * uPointScale * vDepth * (300.0 / max(-mv.z, 0.001));
+  gl_PointSize = clamp(size, 1.2, 11.0);
 }
 `;
 
@@ -46,31 +63,38 @@ export const nodeFragmentShader = /* glsl */ `
 uniform vec3 uColorA;
 uniform vec3 uColorB;
 uniform float uCoherence;
+uniform float uLayerOpacity;
 
 varying float vGlow;
 varying float vPhase;
+varying float vCore;
+varying float vDepth;
+varying float vRim;
 
 void main() {
   vec2 uv = gl_PointCoord - vec2(0.5);
   float d = length(uv);
   if (d > 0.5) discard;
 
-  float core = smoothstep(0.42, 0.04, d);
-  float halo = smoothstep(0.5, 0.14, d) * 0.85;
-  float ring = smoothstep(0.28, 0.16, d) * smoothstep(0.08, 0.18, d) * 0.55;
-  float alpha = (core + halo + ring) * clamp(vGlow, 0.25, 1.85);
+  float core = smoothstep(0.38, 0.03, d);
+  float halo = smoothstep(0.5, 0.16, d) * 0.65;
+  float glow = clamp(vGlow * mix(0.72, 1.08, vDepth) + vRim * 0.22, 0.2, 1.45);
+  float alpha = (core * 0.95 + halo) * glow * uLayerOpacity * 0.85;
 
-  vec3 color = mix(uColorB, uColorA, 0.35 + vPhase * 0.4 + vGlow * 0.35);
-  color *= 0.8 + vGlow * 0.55;
-  color = mix(color, uColorA, core * 0.35);
+  vec3 color = mix(uColorB, uColorA, 0.35 + vPhase * 0.3 + vGlow * 0.22);
+  // highlight derivado do estado — gelo no azul, quente no âmbar
+  vec3 hot = mix(uColorA, vec3(1.0), 0.75);
+  color = mix(color, hot, vCore * 0.28 + core * 0.12);
+  color = mix(color, uColorA, vRim * 0.18);
+  color *= (0.72 + vGlow * 0.38) * mix(0.75, 1.05, vDepth);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
-  color = mix(color, vec3(luma), (1.0 - uCoherence) * 0.7);
+  color = mix(color, vec3(luma), (1.0 - uCoherence) * 0.6);
 
   gl_FragColor = vec4(color, alpha);
 }
 `;
 
-/** Synapse line shaders — visible links with traveling pulse + pointer boost. */
+/** Synapse filaments — dense but not overexposed; depth-aware. */
 export const linkVertexShader = /* glsl */ `
 attribute float aPhase;
 attribute float aAlong;
@@ -81,28 +105,36 @@ uniform float uLevel;
 uniform float uReducedMotion;
 uniform vec3 uPointer;
 uniform float uPointerStrength;
+uniform float uTurbulence;
 
 varying float vPulse;
 varying float vPhase;
 varying float vPull;
+varying float vDepth;
+varying float vRim;
 
 void main() {
   vPhase = aPhase;
+  float radial = length(position);
+  vRim = smoothstep(0.88, 0.98, radial) * (1.0 - smoothstep(1.05, 1.18, radial));
+
   float travel = uReducedMotion > 0.5
     ? fract(aPhase)
-    : fract(aPhase + uTime * (0.2 + uPulseTravel * 0.65) + uLevel * 0.1);
+    : fract(aPhase + uTime * (0.2 + uPulseTravel * 0.55 + uTurbulence * 0.12) + uLevel * 0.08);
   float dist = abs(aAlong - travel);
   dist = min(dist, 1.0 - dist);
   vPulse = uReducedMotion > 0.5
-    ? 0.25
-    : exp(-dist * dist * 36.0);
+    ? 0.22
+    : exp(-dist * dist * 32.0);
 
   vPull = 0.0;
   if (uPointerStrength > 0.001) {
-    vPull = smoothstep(0.4, 1.0, dot(normalize(position), normalize(uPointer)));
+    vPull = smoothstep(0.35, 1.0, dot(normalize(position + 1e-5), normalize(uPointer)));
   }
 
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vDepth = clamp(0.55 + (-mv.z) * 0.12, 0.45, 1.15);
+  gl_Position = projectionMatrix * mv;
 }
 `;
 
@@ -112,23 +144,27 @@ uniform vec3 uColorB;
 uniform float uCoherence;
 uniform float uLinkIntensity;
 uniform float uPointerStrength;
+uniform float uLayerOpacity;
 
 varying float vPulse;
 varying float vPhase;
 varying float vPull;
+varying float vDepth;
+varying float vRim;
 
 void main() {
-  float base = 0.22 + uLinkIntensity * 0.38;
+  float base = 0.22 + uLinkIntensity * 0.32;
   float alpha = clamp(
-    base + vPulse * (0.65 + uLinkIntensity * 0.5) + vPull * uPointerStrength * 0.35,
+    base + vPulse * (0.45 + uLinkIntensity * 0.28) + vPull * uPointerStrength * 0.18 + vRim * 0.08,
     0.08,
-    0.98
-  );
-  vec3 color = mix(uColorB, uColorA, 0.45 + vPhase * 0.3 + vPulse * 0.4);
-  color *= 0.9 + vPulse * 0.55 + vPull * uPointerStrength * 0.35;
+    0.72
+  ) * uLayerOpacity * 0.9 * mix(0.7, 1.05, vDepth);
+  vec3 color = mix(uColorB, uColorA, 0.42 + vPhase * 0.22 + vPulse * 0.22);
+  vec3 hot = mix(uColorA, vec3(1.0), 0.75);
+  color = mix(color, hot, vPulse * 0.18);
+  color *= (0.78 + vPulse * 0.35) * mix(0.78, 1.05, vDepth);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
-  color = mix(color, vec3(luma), (1.0 - uCoherence) * 0.75);
-  alpha *= mix(0.35 + step(0.55, fract(vPhase * 7.3)) * 0.65, 1.0, uCoherence);
+  color = mix(color, vec3(luma), (1.0 - uCoherence) * 0.65);
   gl_FragColor = vec4(color, alpha);
 }
 `;

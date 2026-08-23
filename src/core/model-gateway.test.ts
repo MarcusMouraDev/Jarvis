@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildRoutingCandidates,
+  buildSafeFallbackAliases,
   createCloudEgressDigest,
   isSmartRoutingEnabled,
   selectSafeModelAlias,
@@ -157,6 +158,16 @@ agents:
         allowPaidProvider: true,
       }),
     ).toThrow("local_model_unavailable");
+  });
+
+  it("permite fallback de OmniRoute local quando o sidecar está offline", () => {
+    expect(
+      buildSafeFallbackAliases({
+        catalog: safeCatalog,
+        requestedAlias: "local",
+        classification: "unavailable",
+      }),
+    ).toEqual(["gemini"]);
   });
 
   it("mantém alias solicitado com smart routing desligado", () => {

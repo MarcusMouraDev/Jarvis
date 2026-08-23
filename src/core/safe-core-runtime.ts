@@ -8,6 +8,7 @@ import {
   CursorTextSafeAdapter,
   GeminiSafeAdapter,
   LocalOllamaAdapter,
+  LocalOpenAICompatibleAdapter,
   type SafeModelAdapter,
 } from "./safe-model-adapters";
 import {
@@ -61,7 +62,10 @@ function positiveNumber(
 
 export function buildSafeAdapters(readEnv: ReadEnv = processEnv): AdapterMap {
   const adapters: AdapterMap = {};
-  if (readEnv("JARVIS_LOCAL_MODEL")) {
+  // OmniRoute (OpenAI-compatible) wins over Ollama for alias `local`.
+  if (readEnv("LOCAL_OPENAI_BASE_URL")?.trim()) {
+    adapters.local = new LocalOpenAICompatibleAdapter({ readEnv });
+  } else if (readEnv("JARVIS_LOCAL_MODEL")) {
     adapters.local = new LocalOllamaAdapter({ readEnv });
   }
   if (readEnv("GEMINI_API_KEY")) {

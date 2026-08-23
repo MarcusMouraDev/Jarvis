@@ -23,6 +23,7 @@ models:
     adapter: codex-cli
     auth: chatgpt-account-in-cursor
     fallback: []
+  # OmniRoute sidecar (OpenAI-compatible) — typically http://localhost:20128
   local-openai:
     provider: local
     adapter: openai-compatible
@@ -30,11 +31,11 @@ models:
     fallback: [gemini]
 
 voice:
-  provider: minimax
-  adapter: direct-api
-  env_key: MINIMAX_API_KEY
+  provider: openai
+  adapter: whisper
+  env_key: OPENAI_API_KEY
   locale: pt-BR
-  voice_id: natural-ptbr-default
+  voice_id: pt-BR
   auto_play: true
   auto_read: false
   audio_format: mp3

@@ -168,7 +168,11 @@ function toolCallSignature(toolId: string, input: JsonValue): string {
 }
 
 function modelContent(prompt: string, context: JsonValue): string {
-  return context === null ? prompt : `${prompt}\n\nContext:\n${stableJson(context)}`;
+  const language =
+    "Responda sempre em português do Brasil, de forma clara e objetiva, salvo pedido contrário do usuário.\n\n";
+  const body =
+    context === null ? prompt : `${prompt}\n\nContext:\n${stableJson(context)}`;
+  return `${language}${body}`;
 }
 
 function eventPayload(event: SafeModelEvent): JsonValue {
@@ -411,13 +415,18 @@ export class SafeModelOrchestrator {
           from: ["waiting_approval"],
           to: "running",
         });
-        this.append(run.runId, "tool.completed", {
-          callId: pending.callId,
-          toolId: pending.toolId,
-          invocationId: result.invocationId,
-          signature: pending.signature,
-          output: asJsonValue(result.output),
-        });
+        this.append(
+          run.runId,
+          "tool.completed",
+          asJsonValue({
+            callId: pending.callId,
+            toolId: pending.toolId,
+            invocationId: result.invocationId,
+            signature: pending.signature,
+            output: result.output,
+            ...(result.compression ? { compression: result.compression } : {}),
+          }),
+        );
         const resumedEvents = this.options.store.replayEvents(run.runId);
         return await this.executeLoop({
           run: { ...run, status: "running" },
@@ -638,13 +647,18 @@ export class SafeModelOrchestrator {
           return this.approvalResult(result);
         }
         const output = asJsonValue(result.output);
-        this.append(state.run.runId, "tool.completed", {
-          callId: call.callId,
-          toolId: call.toolId,
-          invocationId: result.invocationId,
-          signature,
-          output,
-        });
+        this.append(
+          state.run.runId,
+          "tool.completed",
+          asJsonValue({
+            callId: call.callId,
+            toolId: call.toolId,
+            invocationId: result.invocationId,
+            signature,
+            output: result.output,
+            ...(result.compression ? { compression: result.compression } : {}),
+          }),
+        );
         state.messages.push({
           role: "assistant_tool_call",
           callId: call.callId,

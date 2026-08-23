@@ -1,4 +1,4 @@
-# Jarvis V23 — presença viva
+# Jarvis V24 — presença viva
 
 Este documento descreve somente o sistema visual. Para arquitetura e evolução segura, consulte [`docs/architecture/overview.md`](docs/architecture/overview.md) e [`docs/security/safe-agent-core.md`](docs/security/safe-agent-core.md).
 
@@ -9,9 +9,9 @@ Este documento descreve somente o sistema visual. Para arquitetura e evolução 
 | `idle` | Neutro frio | Respiração quase imperceptível |
 | `listening` | Azul | Deslocamento dirigido pelo microfone |
 | `thinking` | Laranja | Turbulência interna, sem áudio |
-| `speaking` | Ciano | Reativo à saída de voz (MiniMax mp3) |
+| `speaking` | Ciano | Reativo à saída de voz (síntese do navegador) |
 | `asking` | Vermelho | Pulso lento, campo quase parado |
-| `failure` | Sem cor nova | Congela o matiz anterior, perde coerência, dessatura |
+| `failure` | Sem cor nova | Congela o matiz anterior via `resolvePresenceVisual`, perde coerência, dessatura |
 
 **Colisão resolvida:** falha não é uma cor. Vermelho = "preciso de você" (pergunta ou confirmação de risco). Âmbar de fallback vive só na faixa textual, não na esfera.
 
@@ -21,23 +21,34 @@ Este documento descreve somente o sistema visual. Para arquitetura e evolução 
 
 Definidos em `src/app/globals.css` via `@theme`:
 
-- superfícies: `--color-surface-0..3`
+- superfícies: `--color-surface-0..3` (0.105 → 0.285, separáveis)
 - tinta: `--color-ink-0..2`
+- foco / semântica: `--focus-ring`, `--state-danger`, `--state-success`
 - acentos: listen / think / ask / speak
-- fallback textual: `--color-fallback`
 - elevação: `--elev-1..3` (borda + sombra + blur)
+- layout: `--instrument-height` (ResizeObserver na InstrumentBar)
 - motion: `--ease-out`, `--ease-in-out`, `--ease-drawer`, `--dur-press|pop|panel`
 
 A esfera usa uniforms hex derivados do mesmo sistema (`src/state/presence-config.ts`).
-Vinheta e halo do shell leem `--state-glow` (hex de `colorA` do estado atual).
+Vinheta e halo do shell leem `--state-glow` (hex de `colorA` do visual resolvido).
+
+## Presença em camadas
+
+Perfis `mobile` / `balanced` / `high` via `getNeuralProfile` → `createLayeredNeuralGeometry`:
+
+- **core** ~raio 0.72
+- **cortex** 1.00–1.15
+- **micro** 1.22–1.38 (menor `uPointScale` / `uLayerOpacity`)
+- órbitas CSS/Three discretas de baixa opacidade
+- fallback CSS ≥ 24 nós + 6 ligações
 
 ## Camadas (z)
 
 | Camada | z | Conteúdo |
 |--------|---|----------|
-| Vinheta | 0 | Glow de fundo reativo ao estado |
+| Vinheta | 0 | Glow + profundidade + grain sutil |
 | Halo | 10 | Aura ao redor do globo |
-| Canvas | 20 | Rede neural WebGL |
+| Canvas | 20 | Rede neural WebGL em camadas |
 | Chrome | 30 | Instrumento + composer |
 | Painéis | 40 | Histórico, terminal, paleta |
 | Confirmação | 50 | Overlay de risco / primeiro uso |
@@ -46,18 +57,19 @@ Vinheta e halo do shell leem `--state-glow` (hex de `colorA` do estado atual).
 
 - Atração do mouse no globo (pointer fine): neurônios próximos ao cursor puxam para fora; parallax discreto.
 - Hover UI atrás de `@media (hover: hover) and (pointer: fine)`.
-- Paleta `Cmd/Ctrl+K` abre sem animação (ação de teclado frequente).
-- Spotlight em linhas de paleta/histórico via `--mx/--my` na própria linha.
+- Paleta `Cmd/Ctrl+K` — `runItem(item)` no clique (sem índice stale).
+- `Cmd/Ctrl+V` não intercepta paste em campos editáveis.
+- Confirmação/aprovação: foco inicial em Cancelar/Recusar.
+- Composer: botão Parar enquanto `busy`.
 
 ## Acessibilidade e degradação
 
 - `prefers-reduced-motion` checado em JS; **default SSR = reduzido**
-- movimento reduzido → sem rotação/pulsos/atração; cor de estado preservada
-- sem WebGL → fallback CSS neural
+- movimento reduzido → `frameloop="demand"` + `invalidate()` na troca de estado; cor preservada
+- sem WebGL / context lost → fallback CSS neural
 - laço pausado em aba oculta; DPR limitado a 1.75
-- foco visível instantâneo; atalhos: `^H` histórico, `^V` voz, `^L` ouvir, `^K` paleta, `Esc` cancelar
-
-Os controles operacionais e a política de ferramentas pertencem à [arquitetura](docs/architecture/overview.md) e à [segurança](docs/security/safe-agent-core.md).
+- `useDialogFocus` em dialogs; touch ≥ 44×44
+- foco visível via `--focus-ring`
 
 ## Áudio
 
@@ -69,3 +81,4 @@ Os controles operacionais e a política de ferramentas pertencem à [arquitetura
 ## Instrumento
 
 Privacidade, provedor efetivo e custo ficam na linha de instrumento — não na esfera.
+`JarvisShell` e `SafeJarvisShell` compartilham tokens, presença e chrome foundation.

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MockVoiceAdapter } from "@/adapters/mock-voice";
 import type { ComposerChip } from "@/composer/mention-types";
 import { serializeUserPrompt } from "@/composer/serialize-payload";
 import {
@@ -16,9 +15,15 @@ import {
   decideShellApproval,
   streamShell,
 } from "@/lib/shell-client";
-import { PRESENCE_BY_STATE } from "@/state/presence-config";
+import {
+  IDLE_PRESENCE_VISUAL,
+  PRESENCE_BY_STATE,
+} from "@/state/presence-config";
 import { AgentStateMachine } from "@/state/agent-state";
 import { useAudioLevel } from "@/audio/use-audio-level";
+import { useClapWake } from "@/audio/use-clap-wake";
+import { speakWithBrowser } from "@/audio/speech-synthesis";
+import { useVoiceListen } from "@/audio/use-voice-listen";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useWebGLAvailable } from "@/hooks/use-webgl";
 import { PresenceField } from "@/presence/PresenceField";
@@ -33,7 +38,13 @@ import {
 } from "./HistoryPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { InstrumentBar } from "./InstrumentBar";
+import {
+  OmnirouteStatusChip,
+  OmnirouteUsagePanel,
+  useOmnirouteUsage,
+} from "./OmnirouteUsagePanel";
 import { LastExchange } from "./LastExchange";
+import { PresenceStage } from "./PresenceStage";
 import { StateLabel } from "./StateLabel";
 import {
   TerminalPanel,
@@ -55,6 +66,7 @@ export function JarvisShell() {
   const [modelAlias, setModelAlias] = useState(jarvisConfig.defaultModel);
   const [privacyClass] = useState<PrivacyClass>("internal");
   const [voiceOn, setVoiceOn] = useState(jarvisConfig.voice.autoPlay);
+  const [clapWakeOn, setClapWakeOn] = useState(true);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [spent, setSpent] = useState(0);
@@ -99,14 +111,25 @@ export function JarvisShell() {
   const reducedMotion = useReducedMotion();
   const documentHidden = useDocumentHidden();
   const webglAvailable = useWebGLAvailable();
-  const { levelRef, micPermission } = useAudioLevel(state, audioRef, {
-    enabled: !reducedMotion,
+  const listening = state === "listening";
+  const { levelRef: audioLevelRef, micPermission } = useAudioLevel(state, audioRef, {
+    enabled: !reducedMotion && !listening,
   });
 
-  const glow =
-    state === "failure"
-      ? "#7a8088"
-      : PRESENCE_BY_STATE[state].colorA;
+  const [instrumentHeight, setInstrumentHeight] = useState(56);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const usage = useOmnirouteUsage({ open: usageOpen });
+  const onInstrumentHeight = useCallback((h: number) => {
+    setInstrumentHeight(Math.max(40, Math.round(h)));
+  }, []);
+
+  useEffect(() => {
+    const desktop = window.jarvisDesktop;
+    if (!desktop) return;
+    return desktop.onOpenUsagePanel(() => setUsageOpen(true));
+  }, []);
+
+  const [glow, setGlow] = useState(IDLE_PRESENCE_VISUAL.colorA);
   const panelOpen = historyOpen || memoryOpen || terminalOpen || paletteOpen;
 
   const go = useCallback(
@@ -116,7 +139,11 @@ export function JarvisShell() {
       } catch {
         machine.force(to);
       }
-      setState(machine.current);
+      const next = machine.current;
+      setState(next);
+      setGlow((prev) =>
+        next === "failure" ? prev : PRESENCE_BY_STATE[next].colorA,
+      );
     },
     [machine],
   );
@@ -136,6 +163,21 @@ export function JarvisShell() {
       // Persistence is best-effort.
     });
   }, []);
+
+  const handleClapWake = useCallback(() => {
+    go("listening");
+    pushMessage({
+      id: crypto.randomUUID(),
+      role: "system",
+      text: "*clap clap* detectado — Jarvis ouvindo.",
+    });
+  }, [go, pushMessage]);
+
+  useClapWake({
+    enabled: clapWakeOn && !reducedMotion,
+    state,
+    onWake: handleClapWake,
+  });
 
   const refreshRuns = useCallback(async () => {
     try {
@@ -270,6 +312,14 @@ export function JarvisShell() {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        const editable =
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target?.isContentEditable;
+        if (editable) return;
         e.preventDefault();
         setVoiceOn((v) => !v);
         return;
@@ -327,7 +377,7 @@ export function JarvisShell() {
       pushMessage({
         id: crypto.randomUUID(),
         role: "system",
-        text: "Primeiro uso de voz: áudio sintético mock (MiniMax real não conectado).",
+        text: "Primeiro uso de voz: leitura via síntese do navegador.",
       });
     }
 
@@ -335,21 +385,11 @@ export function JarvisShell() {
     setBusy(true);
     try {
       if (signal?.aborted) throw new Error("aborted");
-      const voice = new MockVoiceAdapter();
-      const response = await voice.synthesize({
-        voiceId: jarvisConfig.voice.voiceId,
-        locale: jarvisConfig.voice.locale,
-        audioFormat: jarvisConfig.voice.audioFormat,
-        text,
-        requestId: crypto.randomUUID(),
-      });
-      if (signal?.aborted) throw new Error("aborted");
       go("speaking");
-      const audio = audioRef.current;
-      if (audio) {
-        audio.src = response.audioPath;
-        await audio.play().catch(() => undefined);
-      }
+      await speakWithBrowser(text, {
+        locale: jarvisConfig.voice.locale,
+        signal,
+      });
     } catch (err) {
       if (err instanceof Error && err.message === "aborted") return;
       go("failure");
@@ -439,6 +479,34 @@ export function JarvisShell() {
         });
         return true;
       }
+    }
+
+    if (cmd === "/clap") {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === "on") {
+        setClapWakeOn(true);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Ativação por duas palmas ligada. Bata palmas duas vezes para ouvir.",
+        });
+        return true;
+      }
+      if (sub === "off") {
+        setClapWakeOn(false);
+        pushMessage({
+          id: crypto.randomUUID(),
+          role: "system",
+          text: "Ativação por palmas desligada.",
+        });
+        return true;
+      }
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: `Palmas ${clapWakeOn ? "ligadas" : "desligadas"} · duas palmas rápidas ativam o modo ouvir`,
+      });
+      return true;
     }
 
     if (cmd === "/speak") {
@@ -633,6 +701,9 @@ export function JarvisShell() {
       { text: input, chips: composerChips, cursor: input.length },
       modelAlias,
     );
+    if (payload.alias !== modelAlias) {
+      setModelAlias(payload.alias);
+    }
     const provider = getProviderForAlias(payload.alias);
     if (!noticedProviders.current.has(provider)) {
       setFirstUseProvider(provider);
@@ -830,6 +901,42 @@ export function JarvisShell() {
     }
   };
 
+  const sendChatRef = useRef(sendChat);
+  useEffect(() => {
+    sendChatRef.current = sendChat;
+  }, [sendChat]);
+
+  const handleVoiceTranscript = useCallback(
+    async (text: string) => {
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        text,
+      });
+      setInput("");
+      setComposerChips([]);
+      await sendChatRef.current(text);
+    },
+    [pushMessage],
+  );
+
+  const { levelRef: listenLevelRef } = useVoiceListen({
+    active: listening && !busy,
+    onTranscript: (text) => {
+      void handleVoiceTranscript(text);
+    },
+    onError: (message) => {
+      pushMessage({
+        id: crypto.randomUUID(),
+        role: "system",
+        text: `Whisper: falha na transcrição (${message}).`,
+      });
+      go("failure");
+    },
+  });
+
+  const levelRef = listening ? listenLevelRef : audioLevelRef;
+
   const handlePaletteAction = async (
     action: string,
     meta?: { skill?: string; shift?: boolean },
@@ -887,8 +994,13 @@ export function JarvisShell() {
 
   return (
     <div
-      className="relative flex h-dvh flex-col overflow-x-clip"
-      style={{ "--state-glow": glow } as React.CSSProperties}
+      className="relative flex min-h-dvh flex-col overflow-x-clip"
+      style={
+        {
+          "--state-glow": glow,
+          "--instrument-height": `${instrumentHeight}px`,
+        } as React.CSSProperties
+      }
     >
       <div className="shell-vignette" aria-hidden />
 
@@ -900,15 +1012,27 @@ export function JarvisShell() {
         spentUsd={spent}
         budgetUsd={BUDGET_USD}
         voiceOn={voiceOn}
+        clapWakeOn={clapWakeOn}
         micPermission={micPermission}
+        extra={
+          <OmnirouteStatusChip
+            report={usage.report}
+            onOpen={() => setUsageOpen(true)}
+          />
+        }
+        onHeightChange={onInstrumentHeight}
       />
 
       <main className="relative z-20 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 pt-3 sm:px-4 sm:pt-4">
-        <div className="flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
-          <div
-            className={`presence-stage shrink-0 ${panelOpen ? "presence-stage--compact" : ""}`}
-          >
-            <div className="presence-halo" aria-hidden />
+        <OmnirouteUsagePanel
+          open={usageOpen}
+          report={usage.report}
+          loading={usage.loading}
+          onClose={() => setUsageOpen(false)}
+          onRefresh={() => void usage.refresh()}
+        />
+        <div className="presence-arena flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
+          <PresenceStage state={state} compact={panelOpen}>
             <PresenceField
               state={state}
               levelRef={levelRef}
@@ -916,9 +1040,9 @@ export function JarvisShell() {
               paused={documentHidden}
               webglAvailable={webglAvailable}
             />
-          </div>
+          </PresenceStage>
 
-          <div className="mt-3 flex w-full flex-col items-center gap-2 sm:mt-4">
+          <div className="presence-caption mt-3 flex w-full flex-col items-center gap-2 sm:mt-4">
             <StateLabel state={state} />
             <FallbackStrip
               visible={fallback.visible}
@@ -967,9 +1091,11 @@ export function JarvisShell() {
         value={input}
         chips={composerChips}
         disabled={busy || Boolean(pendingRisk) || Boolean(firstUseProvider) || Boolean(pendingCloudFallback)}
+        busy={busy}
         onChange={setInput}
         onChipsChange={setComposerChips}
         onSubmit={() => void handleSubmit()}
+        onCancel={cancelActive}
         skillCatalog={paletteSkills}
         modelAliases={modelAliases}
       />

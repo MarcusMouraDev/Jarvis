@@ -6,6 +6,10 @@ export const safeToolIds = [
   "terminal.run",
   "file.patch",
   "project.create",
+  "omniroute.list_models",
+  "omniroute.check_quota",
+  "omniroute.compression_status",
+  "omniroute.usage_report",
 ] as const;
 
 export type SafeToolId = (typeof safeToolIds)[number];
@@ -143,6 +147,89 @@ const manifests: Record<SafeToolId, SafeToolManifest> = {
     inputSchema: z.object({ name: z.string().min(1).max(64) }).strict(),
     outputSchema: z
       .object({ name: z.string(), path: z.string(), created: z.boolean() })
+      .strict(),
+  },
+  "omniroute.list_models": {
+    id: "omniroute.list_models",
+    version: "1.0.0",
+    description: "Lists models from the local OmniRoute OpenAI-compatible catalog.",
+    risk: "read",
+    sideEffect: "none",
+    requiredScopes: ["omniroute:read"],
+    idempotent: true,
+    supportsPreview: false,
+    timeoutMs: 10_000,
+    maxOutputBytes: 100_000,
+    inputSchema: z.object({}).strict(),
+    outputSchema: z
+      .object({
+        models: z.array(
+          z
+            .object({
+              id: z.string(),
+              ownedBy: z.string().optional(),
+            })
+            .strict(),
+        ),
+        source: z.string(),
+      })
+      .strict(),
+  },
+  "omniroute.check_quota": {
+    id: "omniroute.check_quota",
+    version: "1.0.0",
+    description: "Reads OmniRoute quota / rate-limit status (loopback only).",
+    risk: "read",
+    sideEffect: "none",
+    requiredScopes: ["omniroute:read"],
+    idempotent: true,
+    supportsPreview: false,
+    timeoutMs: 10_000,
+    maxOutputBytes: 100_000,
+    inputSchema: z.object({}).strict(),
+    outputSchema: z
+      .object({
+        quota: z.unknown(),
+        source: z.string(),
+      })
+      .strict(),
+  },
+  "omniroute.compression_status": {
+    id: "omniroute.compression_status",
+    version: "1.0.0",
+    description: "Reads OmniRoute compression status without mutating configuration.",
+    risk: "read",
+    sideEffect: "none",
+    requiredScopes: ["omniroute:read"],
+    idempotent: true,
+    supportsPreview: false,
+    timeoutMs: 10_000,
+    maxOutputBytes: 100_000,
+    inputSchema: z.object({}).strict(),
+    outputSchema: z
+      .object({
+        status: z.unknown(),
+        source: z.string(),
+      })
+      .strict(),
+  },
+  "omniroute.usage_report": {
+    id: "omniroute.usage_report",
+    version: "1.0.0",
+    description: "Reads OmniRoute 7-day usage totals and provider quota without mutating state.",
+    risk: "read",
+    sideEffect: "none",
+    requiredScopes: ["omniroute:read"],
+    idempotent: true,
+    supportsPreview: false,
+    timeoutMs: 12_000,
+    maxOutputBytes: 100_000,
+    inputSchema: z.object({}).strict(),
+    outputSchema: z
+      .object({
+        report: z.unknown(),
+        source: z.string(),
+      })
       .strict(),
   },
 };

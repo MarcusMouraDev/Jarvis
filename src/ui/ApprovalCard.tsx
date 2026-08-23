@@ -55,16 +55,16 @@ export function ApprovalCard({
       <div className="mt-3 flex flex-wrap justify-end gap-2">
         <button
           type="button"
-          className="btn-press rounded-md px-3 py-1.5 text-xs whitespace-nowrap text-ink-2 hover:text-ink-0"
+          className="btn-press min-h-11 min-w-11 rounded-md px-3 py-1.5 text-xs whitespace-nowrap text-ink-2 hover:text-ink-0"
           onClick={onDeny}
+          autoFocus
         >
           Recusar
         </button>
         <button
           type="button"
-          className="btn-press rounded-md bg-accent-ask px-3 py-1.5 text-xs font-medium whitespace-nowrap text-surface-0"
+          className="btn-press min-h-11 min-w-11 rounded-md bg-accent-ask px-3 py-1.5 text-xs font-medium whitespace-nowrap text-surface-0"
           onClick={onApprove}
-          autoFocus
         >
           Executar
         </button>

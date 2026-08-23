@@ -12,6 +12,7 @@ export interface SafeRunUiState {
   pendingApproval: SafeApprovalView | null;
   fallback: { from: string; to: string; reason: string } | null;
   protocolError: string | null;
+  failureReason: string | null;
   runStatus: string | null;
 }
 
@@ -59,6 +60,7 @@ export function initialSafeRunState(): SafeRunUiState {
     pendingApproval: null,
     fallback: null,
     protocolError: null,
+    failureReason: null,
     runStatus: null,
   };
 }
@@ -148,6 +150,7 @@ export function applySafeEvent(
         presence: "failure",
         pendingApproval: null,
         runStatus: "failed",
+        failureReason: asString(record?.reason) ?? "unknown",
       };
     case "abort":
       return {

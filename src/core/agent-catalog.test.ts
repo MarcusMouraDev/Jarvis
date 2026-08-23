@@ -80,7 +80,7 @@ describe("agent catalog", () => {
     expect(catalog.models.local).toMatchObject({
       provider: "local",
       costsExtra: false,
-      fallback: [],
+      fallback: ["cursor-text"],
     });
     expect(catalog.models.gemini.fallback).toEqual(["codex-openai"]);
     expect(catalog.models["codex-openai"].fallback).toEqual(["cursor-text"]);
@@ -93,7 +93,14 @@ describe("agent catalog", () => {
     ]);
     expect(getAgent(catalog, "Planner")).toMatchObject({
       mutationMode: "none",
-      tools: ["code.context", "terminal.read"],
+      tools: [
+        "code.context",
+        "terminal.read",
+        "omniroute.list_models",
+        "omniroute.check_quota",
+        "omniroute.compression_status",
+        "omniroute.usage_report",
+      ],
       budgetUsd: 0,
     });
   });

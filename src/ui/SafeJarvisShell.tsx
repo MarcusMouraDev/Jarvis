@@ -13,7 +13,10 @@ import {
   safeCoreFetch,
   streamRunEvents,
 } from "@/lib/safe-core-client";
-import { PRESENCE_BY_STATE } from "@/state/presence-config";
+import {
+  IDLE_PRESENCE_VISUAL,
+  PRESENCE_BY_STATE,
+} from "@/state/presence-config";
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useWebGLAvailable } from "@/hooks/use-webgl";
 import { PresenceField } from "@/presence/PresenceField";
@@ -29,8 +32,24 @@ import { LastExchange } from "./LastExchange";
 import { SafeAgentSelector } from "./SafeAgentSelector";
 import { SafeApprovalCard } from "./SafeApprovalCard";
 import { SafeInstrumentBar } from "./SafeInstrumentBar";
+import { PresenceStage } from "./PresenceStage";
 import { StateLabel } from "./StateLabel";
+import {
+  OmnirouteStatusChip,
+  OmnirouteUsagePanel,
+  useOmnirouteUsage,
+} from "./OmnirouteUsagePanel";
+import { explainSafeFailure } from "./safe-failure-message";
 import type { ComposerChip } from "@/composer/mention-types";
+import { serializeUserPrompt } from "@/composer/serialize-payload";
+import {
+  extractLeadingModelMention,
+  isPaidSafeModel,
+  resolveSafeModelAlias,
+  SAFE_MODEL_ALIASES,
+  SAFE_MODEL_PICKER_ALIASES,
+  displayNameForSafeModel,
+} from "@/composer/safe-model-alias";
 import type { ChatMessage } from "./HistoryPanel";
 
 const EMPTY_CHIPS: ComposerChip[] = [];
@@ -52,6 +71,8 @@ export function SafeJarvisShell() {
   const [agentId, setAgentId] = useState<SafeAgentId>("Hermes");
   const [privacyClass] = useState<PrivacyClass>("internal");
   const [input, setInput] = useState("");
+  const [composerChips, setComposerChips] = useState<ComposerChip[]>(EMPTY_CHIPS);
+  const [preferredModel, setPreferredModel] = useState<string | null>("local");
   const [busy, setBusy] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
@@ -65,19 +86,35 @@ export function SafeJarvisShell() {
   const webglAvailable = useWebGLAvailable();
 
   const runIsActive = busy || isActiveRun(runStatus) || isActiveRun(ui.runStatus);
-  const glow =
-    ui.presence === "failure"
-      ? "#7a8088"
-      : PRESENCE_BY_STATE[ui.presence].colorA;
+  const [instrumentHeight, setInstrumentHeight] = useState(56);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const usage = useOmnirouteUsage({ open: usageOpen });
+  const onInstrumentHeight = useCallback((h: number) => {
+    setInstrumentHeight(Math.max(40, Math.round(h)));
+  }, []);
+
+  const [glow, setGlow] = useState(IDLE_PRESENCE_VISUAL.colorA);
+
+  const commitUi = useCallback((next: SafeRunUiState) => {
+    setUi(next);
+    setGlow((prev) =>
+      next.presence === "failure"
+        ? prev
+        : PRESENCE_BY_STATE[next.presence].colorA,
+    );
+  }, []);
 
   const stopStream = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);
 
-  const applyEvents = useCallback((events: readonly SafeEventEnvelope[]) => {
-    setUi(reduceSafeRun(events));
-  }, []);
+  const applyEvents = useCallback(
+    (events: readonly SafeEventEnvelope[]) => {
+      commitUi(reduceSafeRun(events));
+    },
+    [commitUi],
+  );
 
   const connectStream = useCallback(
     async (activeRunId: string, lastEventId: string | null) => {
@@ -102,6 +139,11 @@ export function SafeJarvisShell() {
               protocolError: next.protocolError,
             };
             if (next.runStatus) setRunStatus(next.runStatus);
+            setGlow((prev) =>
+              next.presence === "failure"
+                ? prev
+                : PRESENCE_BY_STATE[next.presence].colorA,
+            );
             return next;
           });
           if (local.protocolError === "sequence_gap") {
@@ -136,6 +178,12 @@ export function SafeJarvisShell() {
     },
     [applyEvents, stopStream],
   );
+
+  useEffect(() => {
+    const desktop = window.jarvisDesktop;
+    if (!desktop) return;
+    return desktop.onOpenUsagePanel(() => setUsageOpen(true));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -220,13 +268,32 @@ export function SafeJarvisShell() {
   );
 
   const onSubmit = useCallback(async () => {
-    const prompt = input.trim();
-    if (!prompt || runIsActive) return;
+    const raw = input.trim();
+    if (!raw || runIsActive) return;
+
+    const payload = serializeUserPrompt(
+      { text: raw, chips: composerChips, cursor: raw.length },
+      preferredModel ?? "local",
+    );
+    const leading = extractLeadingModelMention(payload.userText);
+    const aliasCandidate = leading?.alias ?? payload.alias;
+    const modelAlias = resolveSafeModelAlias(aliasCandidate, SAFE_MODEL_ALIASES);
+    const prompt = (leading?.rest ?? payload.userText).trim();
+    if (!prompt) return;
+
+    if (modelAlias) setPreferredModel(modelAlias);
+
     setError(null);
     setBusy(true);
-    setUserPrompt(prompt);
+    setUserPrompt(
+      modelAlias
+        ? `@${displayNameForSafeModel(modelAlias)} ${prompt}`
+        : prompt,
+    );
     setInput("");
+    setComposerChips(EMPTY_CHIPS);
     setUi(initialSafeRunState());
+    setGlow(IDLE_PRESENCE_VISUAL.colorA);
     try {
       const response = await safeCoreFetch("/api/runs", {
         method: "POST",
@@ -235,6 +302,12 @@ export function SafeJarvisShell() {
           agentId,
           privacyClass,
           workspace: { kind: "none" },
+          ...(modelAlias
+            ? {
+                modelAlias,
+                allowPaidProvider: isPaidSafeModel(modelAlias),
+              }
+            : {}),
         }),
       });
       if (!response.ok) {
@@ -258,8 +331,10 @@ export function SafeJarvisShell() {
   }, [
     agentId,
     applyEvents,
+    composerChips,
     connectStream,
     input,
+    preferredModel,
     privacyClass,
     runIsActive,
   ]);
@@ -344,20 +419,46 @@ export function SafeJarvisShell() {
 
   return (
     <div
-      className="safe-jarvis-shell relative flex h-dvh flex-col overflow-x-clip"
-      style={{ "--state-glow": glow } as React.CSSProperties}
+      className="safe-jarvis-shell relative flex min-h-dvh flex-col overflow-x-clip"
+      style={
+        {
+          "--state-glow": glow,
+          "--instrument-height": `${instrumentHeight}px`,
+        } as React.CSSProperties
+      }
     >
       <div className="shell-vignette" aria-hidden />
       <SafeInstrumentBar
         agentId={agentId}
         privacyClass={privacyClass}
-        model={ui.effectiveModel}
+        model={
+          ui.effectiveModel ??
+          (preferredModel
+            ? {
+                provider: displayNameForSafeModel(preferredModel),
+                model: displayNameForSafeModel(preferredModel),
+              }
+            : null)
+        }
         status={runStatus ?? ui.runStatus}
+        extra={
+          <OmnirouteStatusChip
+            report={usage.report}
+            onOpen={() => setUsageOpen(true)}
+          />
+        }
+        onHeightChange={onInstrumentHeight}
       />
       <main className="relative z-20 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 pt-3 sm:px-4 sm:pt-4">
-        <div className="flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
-          <div className="presence-stage shrink-0">
-            <div className="presence-halo" aria-hidden />
+        <OmnirouteUsagePanel
+          open={usageOpen}
+          report={usage.report}
+          loading={usage.loading}
+          onClose={() => setUsageOpen(false)}
+          onRefresh={() => void usage.refresh()}
+        />
+        <div className="presence-arena flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
+          <PresenceStage state={ui.presence}>
             <PresenceField
               state={ui.presence}
               levelRef={levelRef}
@@ -365,8 +466,8 @@ export function SafeJarvisShell() {
               paused={documentHidden}
               webglAvailable={webglAvailable}
             />
-          </div>
-          <div className="mt-3 flex w-full flex-col items-center gap-2 sm:mt-4">
+          </PresenceStage>
+          <div className="presence-caption mt-3 flex w-full flex-col items-center gap-2 sm:mt-4">
             <StateLabel state={ui.presence} />
             <FallbackStrip
               visible={Boolean(ui.fallback)}
@@ -374,9 +475,11 @@ export function SafeJarvisShell() {
               effectiveAlias={ui.fallback?.to ?? ""}
               reason={ui.fallback?.reason}
             />
-            {error || ui.protocolError ? (
-              <p className="text-center text-xs text-ink-1" role="alert">
-                {error ?? ui.protocolError}
+            {error || ui.protocolError || ui.failureReason ? (
+              <p className="max-w-md text-center text-xs text-ink-1" role="alert">
+                {error ??
+                  explainSafeFailure(ui.protocolError) ??
+                  explainSafeFailure(ui.failureReason)}
               </p>
             ) : null}
           </div>
@@ -403,8 +506,10 @@ export function SafeJarvisShell() {
               <Composer
                 value={input}
                 disabled={runIsActive}
-                chips={EMPTY_CHIPS}
+                chips={composerChips}
                 onChange={setInput}
+                onChipsChange={setComposerChips}
+                modelAliases={[...SAFE_MODEL_PICKER_ALIASES]}
                 onSubmit={() => void onSubmit()}
               />
             </div>

@@ -104,7 +104,7 @@ export function HistoryPanel({
 
   return (
     <aside
-      className="absolute inset-x-0 bottom-0 top-12 z-40 flex flex-col bg-surface-0/96 shadow-[var(--shadow-panel)] backdrop-blur-md sm:top-14"
+      className="absolute inset-x-0 bottom-0 top-[var(--instrument-height,3.5rem)] z-40 flex flex-col bg-surface-0/96 shadow-[var(--shadow-panel)] backdrop-blur-md"
       role="dialog"
       aria-modal="true"
       aria-label="Histórico"

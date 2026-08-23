@@ -1,3 +1,8 @@
+"use client";
+
+import { useRef } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
+
 interface OverlayProps {
   title: string;
   body: string;
@@ -15,14 +20,24 @@ export function ConfirmOverlay({
   onConfirm,
   onCancel,
 }: OverlayProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(true, dialogRef, onCancel);
+
   return (
     <div
       className="confirm-z absolute inset-0 flex items-center justify-center bg-surface-0/80 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
     >
-      <div className="w-full max-w-md rounded-xl border border-surface-2 bg-surface-1 p-5 shadow-[var(--shadow-panel)]">
+      <div
+        ref={dialogRef}
+        className="elev-3 w-full max-w-md rounded-xl border border-surface-2 bg-surface-1 p-5"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+      >
         <h3 id="confirm-title" className="text-lg font-medium text-ink-0">
           {title}
         </h3>
@@ -31,15 +46,15 @@ export function ConfirmOverlay({
           <button
             type="button"
             onClick={onCancel}
-            className="btn-press rounded-md px-3 py-2 text-sm whitespace-nowrap text-ink-2 hover:text-ink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-1"
+            autoFocus
+            className="btn-press min-h-11 min-w-11 rounded-md px-3 py-2 text-sm whitespace-nowrap text-ink-2 hover:text-ink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-press rounded-md bg-accent-ask px-3 py-2 text-sm font-medium whitespace-nowrap text-surface-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ask"
-            autoFocus
+            className="btn-press min-h-11 min-w-11 rounded-md bg-accent-ask px-3 py-2 text-sm font-medium whitespace-nowrap text-surface-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ask"
           >
             {confirmLabel}
           </button>

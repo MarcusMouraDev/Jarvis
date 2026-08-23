@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Mantém OmniRoute (:20128) + Jarvis (:3000) no Mac, sem Ollama.
+# Uso, na pasta jarvis:  bash scripts/keep-open
+set -euo pipefail
+
+if [[ -n "${JARVIS_LOCAL_MODEL:-}" ]]; then
+  echo "keep-open: JARVIS_LOCAL_MODEL está definido. Unset para não usar Ollama." >&2
+  exit 1
+fi
+
+if lsof -nP -iTCP:11434 -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "keep-open: algo escuta :11434 (Ollama). Pare se a intenção é só cloud/OmniRoute." >&2
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "keep-open: caffeinate + scripts/j (Ctrl+C encerra o anti-sleep, não mata os pids do j)."
+echo "Health: curl -sf http://127.0.0.1:20128/v1/models"
+echo "UI:     http://127.0.0.1:3000/"
+exec caffeinate -dims bash "${SCRIPT_DIR}/j"

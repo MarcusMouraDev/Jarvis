@@ -4,6 +4,10 @@ export function isMcpBrasilEnabled(): boolean {
   return process.env.JARVIS_MCP_BRASIL === "1";
 }
 
+export function isOmnirouteMcpEnabled(): boolean {
+  return process.env.JARVIS_OMNIROUTE_MCP === "1";
+}
+
 export function isBrowserEnabled(): boolean {
   return process.env.JARVIS_BROWSER === "1";
 }

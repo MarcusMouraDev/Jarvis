@@ -70,9 +70,12 @@ export function buildSafeFallbackAliases(options: {
   const requested = options.catalog.models[options.requestedAlias];
   if (
     !requested ||
-    requested.provider === "local" ||
     !retryableFallbacks.has(options.classification)
   ) {
+    return [];
+  }
+  // Local (OmniRoute) may fall back to free cursor-text when the sidecar is down.
+  if (requested.provider === "local" && options.classification !== "unavailable") {
     return [];
   }
   const aliases: string[] = [];

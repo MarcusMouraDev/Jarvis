@@ -125,7 +125,7 @@ describe("run-ledger", () => {
 
   it("hidrata do disco quando memória está vazia", () => {
     const run = startRun({ kind: "voice", summary: "teste disco" });
-    addStep(run.id, "tts", "minimax");
+    addStep(run.id, "tts", "whisper");
     finishRun(run.id, "ok");
     const runId = run.id;
 

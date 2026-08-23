@@ -20,6 +20,10 @@ describe("safe UI contract", () => {
     expect(source).toContain("disabled={runIsActive}");
     expect(source).toContain("<SafeApprovalCard");
     expect(source).toContain("cancel");
+    expect(source).toContain("modelAlias");
+    expect(source).toContain("SAFE_MODEL_PICKER_ALIASES");
+    expect(source).toContain("OmnirouteUsagePanel");
+    expect(source).toContain("OmnirouteStatusChip");
     expect(source).not.toMatch(/from ["']@\/lib\/chat-client["']/);
     expect(source).not.toMatch(/from ["']@\/lib\/shell-client["']/);
     expect(source).not.toMatch(/from ["']\.\/JarvisShell["']/);

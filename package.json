@@ -13,6 +13,12 @@
     "test:e2e": "playwright test",
     "test:e2e:safe": "playwright test -c playwright.safe.config.ts",
     "skills:sync": "node scripts/sync-cursor-skills.mjs",
+    "up": "bash scripts/j",
+    "j": "bash scripts/j",
+    "keep-open": "bash scripts/keep-open",
+    "postinstall": "node scripts/ensure-electron.mjs",
+    "desktop": "node scripts/ensure-electron.mjs && electron desktop/main.cjs",
+    "desktop:dev": "node scripts/ensure-electron.mjs && JARVIS_NEXT_DEV=1 electron desktop/main.cjs",
     "eval:benchmark": "tsx evaluation/run-benchmark.ts"
   },
   "dependencies": {
@@ -35,6 +41,7 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@types/three": "^0.180.0",
+    "electron": "^38.8.6",
     "eslint": "^9.33.0",
     "eslint-config-next": "^16.3.0",
     "tailwindcss": "^4.1.18",

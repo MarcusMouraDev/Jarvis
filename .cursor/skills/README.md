@@ -2,28 +2,102 @@
 
 Este diretório é gerado por `npm run skills:sync`.
 
-Skills espelhadas: **21**
+Skills espelhadas: **87**
 
-- `automate` → `../../.cursor/skills-cursor/automate`
-- `autopilot` → `../../.cursor/skills-cursor/autopilot`
-- `canvas` → `../../.cursor/skills-cursor/canvas`
-- `create-hook` → `../../.cursor/skills-cursor/create-hook`
-- `create-rule` → `../../.cursor/skills-cursor/create-rule`
-- `create-skill` → `../../.cursor/skills-cursor/create-skill`
-- `create-subagent` → `../../.cursor/skills-cursor/create-subagent`
-- `loop` → `../../.cursor/skills-cursor/loop`
-- `migrate-to-skills` → `../../.cursor/skills-cursor/migrate-to-skills`
-- `onboard` → `../../.cursor/skills-cursor/onboard`
-- `rename-chat` → `../../.cursor/skills-cursor/rename-chat`
-- `review` → `../../.cursor/skills-cursor/review`
-- `review-bugbot` → `../../.cursor/skills-cursor/review-bugbot`
-- `review-security` → `../../.cursor/skills-cursor/review-security`
-- `sdk` → `../../.cursor/skills-cursor/sdk`
-- `shell` → `../../.cursor/skills-cursor/shell`
-- `split-to-prs` → `../../.cursor/skills-cursor/split-to-prs`
-- `statusline` → `../../.cursor/skills-cursor/statusline`
-- `update-cli-config` → `../../.cursor/skills-cursor/update-cli-config`
-- `update-cursor-settings` → `../../.cursor/skills-cursor/update-cursor-settings`
-- `fix-until-green` → `../../.cursor/skills/fix-until-green`
+| Fonte | Skills |
+| --- | --- |
+| `cursor/skills-cursor` | 0 |
+| `cursor/skills` | 0 |
+| `claude/skills` | 1 |
+| `codex/skills` | 1 |
+| `agents/skills` | 85 |
 
-Não edite skills oficiais aqui — elas apontam para `~/.cursor/skills-cursor` / `~/.cursor/skills`.
+- `automate` (`agents/skills`) → `../../.agents/skills/automate`
+- `autopilot` (`agents/skills`) → `../../.agents/skills/autopilot`
+- `canvas` (`agents/skills`) → `../../.agents/skills/canvas`
+- `create-hook` (`agents/skills`) → `../../.agents/skills/create-hook`
+- `create-rule` (`agents/skills`) → `../../.agents/skills/create-rule`
+- `create-skill` (`agents/skills`) → `../../.agents/skills/create-skill`
+- `create-subagent` (`agents/skills`) → `../../.agents/skills/create-subagent`
+- `loop` (`agents/skills`) → `../../.agents/skills/loop`
+- `migrate-to-skills` (`agents/skills`) → `../../.agents/skills/migrate-to-skills`
+- `onboard` (`agents/skills`) → `../../.agents/skills/onboard`
+- `rename-chat` (`agents/skills`) → `../../.agents/skills/rename-chat`
+- `review` (`agents/skills`) → `../../.agents/skills/review`
+- `review-bugbot` (`agents/skills`) → `../../.agents/skills/review-bugbot`
+- `review-security` (`agents/skills`) → `../../.agents/skills/review-security`
+- `sdk` (`agents/skills`) → `../../.agents/skills/sdk`
+- `shell` (`agents/skills`) → `../../.agents/skills/shell`
+- `split-to-prs` (`agents/skills`) → `../../.agents/skills/split-to-prs`
+- `statusline` (`agents/skills`) → `../../.agents/skills/statusline`
+- `update-cli-config` (`agents/skills`) → `../../.agents/skills/update-cli-config`
+- `update-cursor-settings` (`agents/skills`) → `../../.agents/skills/update-cursor-settings`
+- `ego-browser` (`agents/skills`) → `../../.agents/skills/ego-browser`
+- `fix-until-green` (`agents/skills`) → `../../.agents/skills/fix-until-green`
+- `codebacks-sponsored` (`claude/skills`) → `../../.claude/skills/codebacks-sponsored`
+- `app-builder` (`agents/skills`) → `../../.agents/skills/app-builder`
+- `beautiful-article` (`agents/skills`) → `../../.agents/skills/beautiful-article`
+- `brand-guidelines` (`agents/skills`) → `../../.agents/skills/brand-guidelines`
+- `caveman` (`agents/skills`) → `../../.agents/skills/caveman`
+- `critique-ui` (`agents/skills`) → `../../.agents/skills/critique-ui`
+- `cult-ui-motion` (`agents/skills`) → `../../.agents/skills/cult-ui-motion`
+- `design-communication` (`agents/skills`) → `../../.agents/skills/design-communication`
+- `design-ops-outcomes` (`agents/skills`) → `../../.agents/skills/design-ops-outcomes`
+- `design-ops-process` (`agents/skills`) → `../../.agents/skills/design-ops-process`
+- `design-system-build` (`agents/skills`) → `../../.agents/skills/design-system-build`
+- `design-system-ops` (`agents/skills`) → `../../.agents/skills/design-system-ops`
+- `design-toolkit` (`agents/skills`) → `../../.agents/skills/design-toolkit`
+- `diagnosing-bugs` (`agents/skills`) → `../../.agents/skills/diagnosing-bugs`
+- `domain-modeling` (`agents/skills`) → `../../.agents/skills/domain-modeling`
+- `economia` (`agents/skills`) → `../../.agents/skills/economia`
+- `emil-design-eng` (`agents/skills`) → `../../.agents/skills/emil-design-eng`
+- `experience-architecture` (`agents/skills`) → `../../.agents/skills/experience-architecture`
+- `frontend-design` (`agents/skills`) → `../../.agents/skills/frontend-design`
+- `frontend-design-engineer` (`agents/skills`) → `../../.agents/skills/frontend-design-engineer`
+- `game-builder` (`agents/skills`) → `../../.agents/skills/game-builder`
+- `gestalt-perception` (`agents/skills`) → `../../.agents/skills/gestalt-perception`
+- `gpt-image-2` (`agents/skills`) → `../../.agents/skills/gpt-image-2`
+- `graphify-knowledge-graph` (`agents/skills`) → `../../.agents/skills/graphify-knowledge-graph`
+- `grill-with-docs` (`agents/skills`) → `../../.agents/skills/grill-with-docs`
+- `grilling` (`agents/skills`) → `../../.agents/skills/grilling`
+- `hallmark` (`agents/skills`) → `../../.agents/skills/hallmark`
+- `handoff` (`agents/skills`) → `../../.agents/skills/handoff`
+- `hatch-pet` (`agents/skills`) → `../../.agents/skills/hatch-pet`
+- `huashu-design` (`agents/skills`) → `../../.agents/skills/huashu-design`
+- `impeccable` (`agents/skills`) → `../../.agents/skills/impeccable`
+- `interaction-patterns` (`agents/skills`) → `../../.agents/skills/interaction-patterns`
+- `interaction-principles` (`agents/skills`) → `../../.agents/skills/interaction-principles`
+- `kb-retriever` (`agents/skills`) → `../../.agents/skills/kb-retriever`
+- `landing-page-builder` (`agents/skills`) → `../../.agents/skills/landing-page-builder`
+- `markitdown-document-converter` (`agents/skills`) → `../../.agents/skills/markitdown-document-converter`
+- `mcp-builder` (`agents/skills`) → `../../.agents/skills/mcp-builder`
+- `openwa-whatsapp-gateway` (`agents/skills`) → `../../.agents/skills/openwa-whatsapp-gateway`
+- `ponytail` (`agents/skills`) → `../../.agents/skills/ponytail`
+- `ppt-inter` (`agents/skills`) → `../../.agents/skills/ppt-inter`
+- `prototype` (`agents/skills`) → `../../.agents/skills/prototype`
+- `prototyping` (`agents/skills`) → `../../.agents/skills/prototyping`
+- `research-methods` (`agents/skills`) → `../../.agents/skills/research-methods`
+- `rtk-token-optimizer` (`agents/skills`) → `../../.agents/skills/rtk-token-optimizer`
+- `secure-code-review` (`agents/skills`) → `../../.agents/skills/secure-code-review`
+- `skill-creator` (`codex/skills`) → `../../.codex/skills/skill-creator`
+- `skiper-ui-motion` (`agents/skills`) → `../../.agents/skills/skiper-ui-motion`
+- `system-adoption` (`agents/skills`) → `../../.agents/skills/system-adoption`
+- `task-observer` (`agents/skills`) → `../../.agents/skills/task-observer`
+- `taste-skill` (`agents/skills`) → `../../.agents/skills/taste-skill`
+- `tdd` (`agents/skills`) → `../../.agents/skills/tdd`
+- `testing` (`agents/skills`) → `../../.agents/skills/testing`
+- `to-spec` (`agents/skills`) → `../../.agents/skills/to-spec`
+- `to-tickets` (`agents/skills`) → `../../.agents/skills/to-tickets`
+- `transitions-dev` (`agents/skills`) → `../../.agents/skills/transitions-dev`
+- `ui-foundations` (`agents/skills`) → `../../.agents/skills/ui-foundations`
+- `ui-ux-pro-max` (`agents/skills`) → `../../.agents/skills/ui-ux-pro-max`
+- `user-research` (`agents/skills`) → `../../.agents/skills/user-research`
+- `ux-strategy` (`agents/skills`) → `../../.agents/skills/ux-strategy`
+- `visual-critique` (`agents/skills`) → `../../.agents/skills/visual-critique`
+- `web-artifacts-builder` (`agents/skills`) → `../../.agents/skills/web-artifacts-builder`
+- `web-design-engineer` (`agents/skills`) → `../../.agents/skills/web-design-engineer`
+- `web-video-presentation` (`agents/skills`) → `../../.agents/skills/web-video-presentation`
+- `webapp-testing` (`agents/skills`) → `../../.agents/skills/webapp-testing`
+- `website-builder` (`agents/skills`) → `../../.agents/skills/website-builder`
+
+Não edite skills oficiais aqui — são symlinks para o host.

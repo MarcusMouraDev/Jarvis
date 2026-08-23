@@ -21,6 +21,8 @@ interface ComposerProps {
   onChange: (value: string) => void;
   onChipsChange?: (chips: ComposerChip[]) => void;
   onSubmit: () => void;
+  onCancel?: () => void;
+  busy?: boolean;
   skillCatalog?: SkillCatalogItem[];
   modelAliases?: string[];
 }
@@ -29,19 +31,6 @@ const EMPTY_CHIPS: ComposerChip[] = [];
 const EMPTY_SKILL_CATALOG: SkillCatalogItem[] = [];
 const EMPTY_MODEL_ALIASES: string[] = [];
 
-const HINTS = [
-  "/select model gemini",
-  "/select model codex",
-  "/select model deepseek-flash",
-  "/skills list",
-  "/skill use sdk",
-  "/skill clear",
-  "/run ls",
-  "/profile conversa",
-  "/voice on",
-  "/voice off",
-];
-
 export function Composer({
   value,
   disabled,
@@ -49,6 +38,8 @@ export function Composer({
   onChange,
   onChipsChange,
   onSubmit,
+  onCancel,
+  busy = false,
   skillCatalog = EMPTY_SKILL_CATALOG,
   modelAliases = EMPTY_MODEL_ALIASES,
 }: ComposerProps) {
@@ -274,7 +265,7 @@ export function Composer({
           <input
             ref={inputRef}
             id="jarvis-composer"
-            className="min-w-0 flex-1 rounded-lg border border-surface-2 bg-surface-0 px-3 py-2.5 text-sm text-ink-0 outline-none placeholder:text-ink-2/70 focus-visible:border-accent-listen focus-visible:ring-2 focus-visible:ring-accent-listen/35"
+            className="min-w-0 flex-1 rounded-lg border border-surface-2 bg-surface-0 px-3 py-2.5 text-sm text-ink-0 outline-none placeholder:text-ink-2/70 focus-visible:border-[color-mix(in_oklab,var(--focus-ring)_55%,var(--color-border))] focus-visible:ring-1 focus-visible:ring-[color-mix(in_oklab,var(--focus-ring)_40%,transparent)]"
             value={value}
             disabled={disabled}
             role="combobox"
@@ -311,28 +302,33 @@ export function Composer({
                 setSuggestions([]);
               }
             }}
-            placeholder="@modelo  /skill  #caminho  /run …"
+            placeholder="@omniroute  @gemini  @cursor-text  /skill  #Documents/… #Projetos/…"
             aria-label="Compositor"
-            list="slash-hints"
             autoComplete="off"
           />
-          <button
-            type="submit"
-            disabled={disabled || !value.trim()}
-            className="btn-press shrink-0 rounded-lg bg-accent-listen px-4 py-2.5 text-sm font-medium whitespace-nowrap text-surface-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-listen disabled:opacity-40"
-          >
-            Enviar
-          </button>
+          {busy && onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label="Cancelar resposta"
+              className="btn-press min-h-11 min-w-11 shrink-0 rounded-lg border border-[var(--state-danger)] px-3 py-2.5 text-sm font-medium whitespace-nowrap text-[var(--state-danger)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+            >
+              Parar
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={disabled || !value.trim()}
+              className="btn-press min-h-11 min-w-11 shrink-0 rounded-lg bg-accent-listen px-4 py-2.5 text-sm font-medium whitespace-nowrap text-surface-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-listen disabled:opacity-40"
+            >
+              Enviar
+            </button>
+          )}
         </div>
       </div>
       <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] tracking-wide text-ink-2/80 sm:text-[11px]">
-        ⌘K · hist ^H · voz ^V · @ / # · cancelar Esc
+        {busy ? "recebendo · Esc cancela" : "⌘K · hist ^H · voz ^V · @ / # · cancelar Esc"}
       </p>
-      <datalist id="slash-hints">
-        {HINTS.map((h) => (
-          <option key={h} value={h} />
-        ))}
-      </datalist>
     </form>
   );
 }

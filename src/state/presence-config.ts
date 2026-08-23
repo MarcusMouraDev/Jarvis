@@ -18,68 +18,79 @@ export interface PresenceUniforms {
   pulseTravel: number;
 }
 
+export interface PresenceVisual {
+  colorA: string;
+  colorB: string;
+  saturation: number;
+  coherence: number;
+  activation: number;
+}
+
 export const PRESENCE_BY_STATE: Record<AgentState, PresenceUniforms> = {
   idle: {
-    colorA: "#6f93c0",
-    colorB: "#243a58",
-    turbulence: 0.12,
+    // ice-blue cinematográfico — luminoso sem neon
+    colorA: "#66b0f2",
+    colorB: "#0c2848",
+    turbulence: 0.1,
     coherence: 1,
-    pulse: 0.22,
+    pulse: 0.18,
     freezeColor: false,
-    rotation: 0.14,
-    activation: 0.55,
-    linkIntensity: 0.78,
-    pulseTravel: 0.45,
+    rotation: 0.12,
+    activation: 0.62,
+    linkIntensity: 0.85,
+    pulseTravel: 0.4,
   },
   listening: {
-    colorA: "#4a9dff",
-    colorB: "#1558b8",
-    turbulence: 0.35,
+    colorA: "#3d7ab0",
+    colorB: "#143a5c",
+    turbulence: 0.28,
     coherence: 1,
-    pulse: 0.4,
+    pulse: 0.36,
     freezeColor: false,
-    rotation: 0.22,
-    activation: 0.82,
-    linkIntensity: 0.98,
-    pulseTravel: 0.75,
+    rotation: 0.2,
+    activation: 0.84,
+    linkIntensity: 1.02,
+    pulseTravel: 0.7,
   },
   thinking: {
-    colorA: "#ffb06a",
-    colorB: "#c84a08",
+    // âmbar controlado da referência — núcleo quente, borda mais escura
+    colorA: "#e09048",
+    colorB: "#7a320e",
     turbulence: 0.72,
     coherence: 0.92,
-    pulse: 0.62,
+    pulse: 0.55,
     freezeColor: false,
-    rotation: 0.48,
-    activation: 1,
-    linkIntensity: 1.25,
-    pulseTravel: 1.65,
+    rotation: 0.32,
+    activation: 0.92,
+    linkIntensity: 1.05,
+    pulseTravel: 1.35,
   },
   speaking: {
-    colorA: "#4af0de",
-    colorB: "#12a89c",
-    turbulence: 0.45,
+    colorA: "#3cbdb0",
+    colorB: "#0e6e68",
+    turbulence: 0.4,
     coherence: 1,
-    pulse: 0.48,
+    pulse: 0.46,
     freezeColor: false,
-    rotation: 0.28,
-    activation: 0.88,
-    linkIntensity: 1.05,
+    rotation: 0.26,
+    activation: 0.9,
+    linkIntensity: 1.08,
     pulseTravel: 1.0,
   },
   asking: {
-    colorA: "#ff5a68",
-    colorB: "#c02030",
-    turbulence: 0.2,
+    colorA: "#d94a58",
+    colorB: "#8a1828",
+    turbulence: 0.18,
     coherence: 0.85,
-    pulse: 0.7,
+    pulse: 0.68,
     freezeColor: false,
-    rotation: 0.06,
+    rotation: 0.05,
     activation: 1,
-    linkIntensity: 0.7,
-    pulseTravel: 0.25,
+    linkIntensity: 0.72,
+    pulseTravel: 0.22,
   },
   failure: {
+    // Catalog values unused as live hue — resolvePresenceVisual keeps previous.
     colorA: "#8a9199",
     colorB: "#3a3f45",
     turbulence: 0.9,
@@ -92,6 +103,41 @@ export const PRESENCE_BY_STATE: Record<AgentState, PresenceUniforms> = {
     pulseTravel: 0.05,
   },
 };
+
+export const IDLE_PRESENCE_VISUAL: PresenceVisual = {
+  colorA: PRESENCE_BY_STATE.idle.colorA,
+  colorB: PRESENCE_BY_STATE.idle.colorB,
+  saturation: 1,
+  coherence: PRESENCE_BY_STATE.idle.coherence,
+  activation: PRESENCE_BY_STATE.idle.activation,
+};
+
+/**
+ * Resolve display colors for a state transition.
+ * failure: keep previous hue, reduce saturation/activation — never invent a gray glow.
+ */
+export function resolvePresenceVisual(
+  state: AgentState,
+  previous: PresenceVisual,
+): PresenceVisual {
+  if (state === "failure") {
+    return {
+      colorA: previous.colorA,
+      colorB: previous.colorB,
+      saturation: Math.min(previous.saturation, 0.35),
+      coherence: PRESENCE_BY_STATE.failure.coherence,
+      activation: PRESENCE_BY_STATE.failure.activation,
+    };
+  }
+  const next = PRESENCE_BY_STATE[state];
+  return {
+    colorA: next.colorA,
+    colorB: next.colorB,
+    saturation: 1,
+    coherence: next.coherence,
+    activation: next.activation,
+  };
+}
 
 /** ~600ms transition at 60fps with this rate. */
 export const STATE_BLEND_RATE = 1 / 0.6;

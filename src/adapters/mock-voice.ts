@@ -6,7 +6,7 @@ export class MockVoiceAdapter implements VoiceAdapter {
 
   async synthesize(request: VoiceRequest): Promise<VoiceResponse> {
     if (this.shouldFail) {
-      throw new Error("minimax_unavailable");
+      throw new Error("voice_unavailable");
     }
 
     return {

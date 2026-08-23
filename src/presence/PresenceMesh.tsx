@@ -36,17 +36,24 @@ interface PresenceMeshProps {
 }
 
 const LAYER_SCALE: Record<NeuralLayer | "stardust", number> = {
-  core: 0.95,
-  cortex: 0.62,
-  micro: 0.32,
+  core: 0.84,
+  cortex: 0.61,
+  micro: 0.31,
   stardust: 0.18,
 };
 
 const LAYER_OPACITY: Record<NeuralLayer | "stardust", number> = {
-  core: 0.92,
-  cortex: 0.78,
+  core: 0.78,
+  cortex: 0.74,
   micro: 0.52,
-  stardust: 0.28,
+  stardust: 0.3,
+};
+
+const LAYER_INGEST: Record<NeuralLayer | "stardust", number> = {
+  core: 0,
+  cortex: 0.12,
+  micro: 0.35,
+  stardust: 0.6,
 };
 
 function makeNodeUniforms(
@@ -67,6 +74,8 @@ function makeNodeUniforms(
     uLayerOpacity: { value: LAYER_OPACITY[layer] },
     uPointScale: { value: LAYER_SCALE[layer] },
     uTurbulence: { value: 0.12 },
+    uFlow: { value: 1 },
+    uIngest: { value: 0 },
   };
 }
 
@@ -90,6 +99,8 @@ function makeLinkUniforms(initial: {
     uColorB: { value: new THREE.Vector3(...hexToRgb(initial.colorB)) },
     uLayerOpacity: { value: 0.72 },
     uTurbulence: { value: 0.12 },
+    uFlow: { value: 1 },
+    uIngest: { value: 0 },
   };
 }
 
@@ -224,6 +235,7 @@ export function PresenceMesh({
     rotation: initial.rotation,
     turbulence: initial.turbulence,
     saturation: 1,
+    ingest: 0,
   });
 
   const coreGeo = useMemo(() => {
@@ -383,6 +395,8 @@ export function PresenceMesh({
       current.current.rotation = nextCfg.rotation;
       current.current.turbulence = nextCfg.turbulence;
       current.current.saturation = visual.saturation;
+      current.current.ingest =
+        state === "thinking" ? 1 : state === "speaking" ? -0.35 : 0;
     }
 
     const nodeMats = [
@@ -403,6 +417,7 @@ export function PresenceMesh({
       mat.uniforms.uPulse.value = nextCfg.pulse;
       mat.uniforms.uTurbulence.value = current.current.turbulence;
       mat.uniforms.uReducedMotion.value = reducedMotion ? 1 : 0;
+      mat.uniforms.uFlow.value = reducedMotion ? 0 : 1;
     }
     for (const ref of [coreLinkMatRef, outerLinkMatRef]) {
       const mat = ref.current;
@@ -415,6 +430,7 @@ export function PresenceMesh({
       mat.uniforms.uPulseTravel.value = current.current.pulseTravel;
       mat.uniforms.uTurbulence.value = current.current.turbulence;
       mat.uniforms.uReducedMotion.value = reducedMotion ? 1 : 0;
+      mat.uniforms.uFlow.value = reducedMotion ? 0 : 1;
     }
     syncRingColors();
   };
@@ -489,6 +505,9 @@ export function PresenceMesh({
       visual.saturation,
       t,
     );
+    const ingestTarget =
+      state === "thinking" ? 1 : state === "speaking" ? -0.35 : 0;
+    current.current.ingest = lerp(current.current.ingest, ingestTarget, t);
 
     const level = reducedMotion ? 0 : (levelRef.current ?? 0);
     const rm = reducedMotion ? 1 : 0;
@@ -508,7 +527,7 @@ export function PresenceMesh({
     s.strength = lerp(s.strength, targetStrength, Math.min(1, delta * 8));
     const pointerDir = new THREE.Vector3(s.x, s.y, 0.85).normalize();
 
-    const syncNode = (mat: THREE.ShaderMaterial) => {
+    const syncNode = (mat: THREE.ShaderMaterial, ingestScale: number) => {
       const u = mat.uniforms;
       u.uColorA.value.set(...current.current.colorA);
       u.uColorB.value.set(...current.current.colorB);
@@ -521,6 +540,8 @@ export function PresenceMesh({
       u.uPointer.value.copy(pointerDir);
       u.uPointerStrength.value = s.strength;
       u.uTurbulence.value = current.current.turbulence;
+      u.uFlow.value = reducedMotion ? 0 : 1;
+      u.uIngest.value = current.current.ingest * ingestScale;
     };
     const syncLink = (mat: THREE.ShaderMaterial) => {
       const u = mat.uniforms;
@@ -535,13 +556,15 @@ export function PresenceMesh({
       u.uPointer.value.copy(pointerDir);
       u.uPointerStrength.value = s.strength;
       u.uTurbulence.value = current.current.turbulence;
+      u.uFlow.value = reducedMotion ? 0 : 1;
+      u.uIngest.value = current.current.ingest * 0.2;
     };
 
-    syncNode(coreMatRef.current);
-    syncNode(cortexMatRef.current);
-    syncNode(microMatRef.current);
-    syncNode(stardustMatRef.current);
-    syncNode(dustMatRef.current);
+    syncNode(coreMatRef.current, LAYER_INGEST.core);
+    syncNode(cortexMatRef.current, LAYER_INGEST.cortex);
+    syncNode(microMatRef.current, LAYER_INGEST.micro);
+    syncNode(stardustMatRef.current, LAYER_INGEST.stardust);
+    syncNode(dustMatRef.current, LAYER_INGEST.stardust);
     syncLink(coreLinkMatRef.current);
     syncLink(outerLinkMatRef.current);
     syncRingColors();
@@ -568,6 +591,11 @@ export function PresenceMesh({
             current.current.rotation +
           s.y * 0.12 * s.strength;
         groupRef.current.rotation.z = -s.x * 0.07 * s.strength;
+        if (state === "idle") {
+          const tIdle = coreMatRef.current.uniforms.uTime.value as number;
+          groupRef.current.rotation.y += Math.sin(tIdle * 7.3) * 0.00035;
+          groupRef.current.rotation.x += Math.sin(tIdle * 5.1 + 1.7) * 0.00025;
+        }
       }
     }
   });

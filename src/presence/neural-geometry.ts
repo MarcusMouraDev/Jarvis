@@ -305,7 +305,7 @@ function pointsForLayer(
   phaseOffset: number,
 ): NeuralPoint[] {
   if (layer === "core") {
-    return fibonacciVolume(count, 0.02, 0.5, phaseOffset, 0.42, 0.08);
+    return fibonacciVolume(count, 0.28, 0.54, phaseOffset, 0.74, 0.07);
   }
   if (layer === "cortex") {
     return fibonacciVolume(count, 0.42, 0.86, phaseOffset, 0.7, 0.1);
@@ -316,7 +316,7 @@ function pointsForLayer(
 
 /** Cheap fill points (no edges) for dense visual mass. */
 export function createStardustGeometry(count: number): NeuralGeometry {
-  const points = fibonacciVolume(count, 0.05, 0.96, 50_000, 0.6, 0.12);
+  const points = fibonacciVolume(count, 0.24, 0.96, 50_000, 0.68, 0.12);
   return packGeometry(points, []);
 }
 

@@ -11,12 +11,22 @@ uniform vec3 uPointer;
 uniform float uPointerStrength;
 uniform float uPointScale;
 uniform float uTurbulence;
+uniform float uFlow;
+uniform float uIngest;
 
 varying float vGlow;
 varying float vPhase;
 varying float vCore;
 varying float vDepth;
 varying float vRim;
+
+vec3 flowField(vec3 p, float t) {
+  return vec3(
+    sin(p.y * 3.1 + t * 0.7) + sin(p.z * 2.3 - t * 0.5),
+    sin(p.z * 2.9 + t * 0.6) + sin(p.x * 3.7 - t * 0.4),
+    sin(p.x * 2.7 + t * 0.8) + sin(p.y * 3.3 - t * 0.6)
+  );
+}
 
 void main() {
   vPhase = aPhase;
@@ -35,7 +45,7 @@ void main() {
     1.0 - clamp(uActivation, 0.05, 1.0) + 0.55,
     aPhase + audio * 0.2 + vCore * 0.15
   );
-  vGlow = clamp(0.4 + gate * 0.7 + breathe * 0.28 * max(gate, 0.35) + audio * 0.28 + vCore * 0.35, 0.2, 1.45);
+  vGlow = clamp(0.4 + gate * 0.7 + breathe * 0.28 * max(gate, 0.35) + audio * 0.28 + vCore * 0.12, 0.2, 1.2);
 
   vec3 pos = position;
   vec3 n = normalize(position + 1e-5);
@@ -45,17 +55,18 @@ void main() {
     pos += n * pull * uPointerStrength * 0.08;
     vGlow += pull * uPointerStrength * 0.28;
   }
-  if (uReducedMotion < 0.5 && uTurbulence > 0.01) {
-    pos += n * sin(uTime * (2.0 + aPhase * 3.2) + aPhase * 12.0) * uTurbulence * 0.018;
+  if (uReducedMotion < 0.5) {
+    pos += flowField(position * 1.6, uTime) * uFlow * uTurbulence * 0.006;
   }
+  pos -= n * uIngest * (0.10 + aPhase * 0.06);
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
   // profundidade: pontos atrás do centro menores/mais fracos
   vDepth = clamp(0.55 + (-mv.z) * 0.12, 0.45, 1.15);
   gl_Position = projectionMatrix * mv;
-  float size = (1.9 + vGlow * 5.2 + vCore * 2.8 + vRim * 1.4 + pull * uPointerStrength * 3.0)
+  float size = (1.8 + vGlow * 4.5 + vCore * 1.3 + vRim * 1.4 + pull * uPointerStrength * 3.0)
     * uPointScale * vDepth * (300.0 / max(-mv.z, 0.001));
-  gl_PointSize = clamp(size, 1.2, 11.0);
+  gl_PointSize = clamp(size, 1.2, 9.0);
 }
 `;
 
@@ -79,12 +90,12 @@ void main() {
   float core = smoothstep(0.38, 0.03, d);
   float halo = smoothstep(0.5, 0.16, d) * 0.65;
   float glow = clamp(vGlow * mix(0.72, 1.08, vDepth) + vRim * 0.22, 0.2, 1.45);
-  float alpha = (core * 0.95 + halo) * glow * uLayerOpacity * 0.85;
+  float alpha = (core * 0.86 + halo) * glow * uLayerOpacity * 0.84;
 
   vec3 color = mix(uColorB, uColorA, 0.35 + vPhase * 0.3 + vGlow * 0.22);
   // highlight derivado do estado — gelo no azul, quente no âmbar
-  vec3 hot = mix(uColorA, vec3(1.0), 0.75);
-  color = mix(color, hot, vCore * 0.28 + core * 0.12);
+  vec3 hot = mix(uColorA, vec3(1.0), 0.38);
+  color = mix(color, hot, vCore * 0.12 + core * 0.06);
   color = mix(color, uColorA, vRim * 0.18);
   color *= (0.72 + vGlow * 0.38) * mix(0.75, 1.05, vDepth);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
@@ -106,12 +117,22 @@ uniform float uReducedMotion;
 uniform vec3 uPointer;
 uniform float uPointerStrength;
 uniform float uTurbulence;
+uniform float uFlow;
+uniform float uIngest;
 
 varying float vPulse;
 varying float vPhase;
 varying float vPull;
 varying float vDepth;
 varying float vRim;
+
+vec3 flowField(vec3 p, float t) {
+  return vec3(
+    sin(p.y * 3.1 + t * 0.7) + sin(p.z * 2.3 - t * 0.5),
+    sin(p.z * 2.9 + t * 0.6) + sin(p.x * 3.7 - t * 0.4),
+    sin(p.x * 2.7 + t * 0.8) + sin(p.y * 3.3 - t * 0.6)
+  );
+}
 
 void main() {
   vPhase = aPhase;
@@ -132,7 +153,14 @@ void main() {
     vPull = smoothstep(0.35, 1.0, dot(normalize(position + 1e-5), normalize(uPointer)));
   }
 
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vec3 pos = position;
+  vec3 n = normalize(position + 1e-5);
+  if (uReducedMotion < 0.5) {
+    pos += flowField(position * 1.6, uTime) * uFlow * uTurbulence * 0.006;
+  }
+  pos -= n * uIngest * 0.08;
+
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
   vDepth = clamp(0.55 + (-mv.z) * 0.12, 0.45, 1.15);
   gl_Position = projectionMatrix * mv;
 }

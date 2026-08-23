@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   SafeAgentId,
   SafeAgentSummary,
@@ -20,6 +20,7 @@ import {
 import { useDocumentHidden, useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useWebGLAvailable } from "@/hooks/use-webgl";
 import { PresenceField } from "@/presence/PresenceField";
+import { useStreamLevel } from "@/presence/use-stream-level";
 import {
   applySafeEvent,
   initialSafeRunState,
@@ -33,6 +34,8 @@ import { SafeAgentSelector } from "./SafeAgentSelector";
 import { SafeApprovalCard } from "./SafeApprovalCard";
 import { SafeInstrumentBar } from "./SafeInstrumentBar";
 import { PresenceStage } from "./PresenceStage";
+import { HudFrame } from "./hud/HudFrame";
+import { buildTelemetry } from "./hud/telemetry-data";
 import { StateLabel } from "./StateLabel";
 import {
   OmnirouteStatusChip,
@@ -66,7 +69,8 @@ function isActiveRun(status: string | null | undefined): boolean {
 
 export function SafeJarvisShell() {
   const abortRef = useRef<AbortController | null>(null);
-  const levelRef = useRef(0);
+  const streamGenRef = useRef(1);
+  const { levelRef, noteDelta } = useStreamLevel();
   const [agents, setAgents] = useState<SafeAgentSummary[]>([]);
   const [agentId, setAgentId] = useState<SafeAgentId>("Hermes");
   const [privacyClass] = useState<PrivacyClass>("internal");
@@ -105,6 +109,7 @@ export function SafeJarvisShell() {
   }, []);
 
   const stopStream = useCallback(() => {
+    streamGenRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);
@@ -119,6 +124,7 @@ export function SafeJarvisShell() {
   const connectStream = useCallback(
     async (activeRunId: string, lastEventId: string | null) => {
       stopStream();
+      const gen = streamGenRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
       let local = lastEventId
@@ -131,7 +137,15 @@ export function SafeJarvisShell() {
           lastEventId,
           controller.signal,
         )) {
+          if (controller.signal.aborted) break;
+          if (event.type === "text.delta") {
+            const payload = event.payload as { text?: unknown } | null;
+            if (payload && typeof payload.text === "string") {
+              noteDelta(payload.text.length);
+            }
+          }
           setUi((current) => {
+            if (streamGenRef.current !== gen) return current;
             const next = applySafeEvent(current, event);
             local = {
               lastEventId: next.lastEventId,
@@ -147,9 +161,11 @@ export function SafeJarvisShell() {
             return next;
           });
           if (local.protocolError === "sequence_gap") {
+            if (controller.signal.aborted) break;
             const snapshotResponse = await safeCoreFetch(
               `/api/runs/${encodeURIComponent(activeRunId)}`,
             );
+            if (controller.signal.aborted) return;
             if (!snapshotResponse.ok) throw new Error("snapshot_refetch_failed");
             const snapshot = (await snapshotResponse.json()) as SafeRunSnapshot;
             applyEvents(snapshot.events);
@@ -176,7 +192,7 @@ export function SafeJarvisShell() {
         setBusy(false);
       }
     },
-    [applyEvents, stopStream],
+    [applyEvents, noteDelta, stopStream],
   );
 
   useEffect(() => {
@@ -350,8 +366,18 @@ export function SafeJarvisShell() {
       );
       if (!response.ok) throw new Error(`cancel_${response.status}`);
       const snapshot = (await response.json()) as SafeRunSnapshot;
-      setRunStatus(snapshot.run.status);
-      applyEvents(snapshot.events);
+      const reduced = reduceSafeRun(snapshot.events);
+      const next =
+        isActiveRun(snapshot.run.status) || isActiveRun(reduced.runStatus)
+          ? {
+              ...reduced,
+              runStatus: "cancelled",
+              presence: "idle" as const,
+              pendingApproval: null,
+            }
+          : reduced;
+      commitUi(next);
+      setRunStatus(next.runStatus);
     } catch (cancelError) {
       setError(
         cancelError instanceof Error ? cancelError.message : "cancel_failed",
@@ -359,7 +385,7 @@ export function SafeJarvisShell() {
     } finally {
       setBusy(false);
     }
-  }, [applyEvents, runId, stopStream]);
+  }, [commitUi, runId, stopStream]);
 
   const decideApproval = useCallback(
     async (decision: "approved" | "denied") => {
@@ -417,6 +443,25 @@ export function SafeJarvisShell() {
     });
   }
 
+  const telemetry = useMemo(
+    () =>
+      buildTelemetry({
+        report: usage.report,
+        runStatus: runStatus ?? ui.runStatus,
+        presence: ui.presence,
+        model: ui.effectiveModel,
+        assistantChars: ui.assistantText.length,
+      }),
+    [
+      usage.report,
+      runStatus,
+      ui.runStatus,
+      ui.presence,
+      ui.effectiveModel,
+      ui.assistantText.length,
+    ],
+  );
+
   return (
     <div
       className="safe-jarvis-shell relative flex min-h-dvh flex-col overflow-x-clip"
@@ -450,6 +495,7 @@ export function SafeJarvisShell() {
         onHeightChange={onInstrumentHeight}
       />
       <main className="relative z-20 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 pt-3 sm:px-4 sm:pt-4">
+        <HudFrame snapshot={telemetry} />
         <OmnirouteUsagePanel
           open={usageOpen}
           report={usage.report}
@@ -457,8 +503,8 @@ export function SafeJarvisShell() {
           onClose={() => setUsageOpen(false)}
           onRefresh={() => void usage.refresh()}
         />
-        <div className="presence-arena flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
-          <PresenceStage state={ui.presence}>
+        <div className="presence-arena flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-4 sm:py-6">
+          <PresenceStage state={ui.presence} telemetry={telemetry}>
             <PresenceField
               state={ui.presence}
               levelRef={levelRef}
@@ -513,7 +559,7 @@ export function SafeJarvisShell() {
                 onSubmit={() => void onSubmit()}
               />
             </div>
-            {runIsActive ? (
+            {runIsActive && runId ? (
               <button
                 type="button"
                 className="btn-press mb-1 rounded-md px-3 py-2 text-xs text-ink-1 hover:text-ink-0"

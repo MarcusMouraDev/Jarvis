@@ -42,4 +42,21 @@ describe("safe UI contract", () => {
     expect(source).toContain("disabled={runIsActive}");
     expect(source).toContain("Hermes");
   });
+
+  it("liga o HUD a telemetria real e mata o level morto", () => {
+    const shell = read("./SafeJarvisShell.tsx");
+    expect(shell).toContain("buildTelemetry");
+    expect(shell).toContain("useStreamLevel");
+    expect(shell).not.toContain("useRef(0)");
+  });
+
+  it("mantem o HUD sem numero fixo, lendo so do snapshot", () => {
+    const ring = read("./hud/TelemetryRing.tsx");
+    expect(ring).toContain("snapshot.gauges");
+    expect(ring).toContain("aria-hidden");
+
+    const frame = read("./hud/HudFrame.tsx");
+    expect(frame).toContain("snapshot.readouts");
+    expect(frame).not.toMatch(/US\$\s*\d/);
+  });
 });

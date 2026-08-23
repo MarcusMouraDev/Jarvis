@@ -232,6 +232,15 @@ export class SafeCoreService {
     const agent = getAgent(this.options.catalog, agentId);
     if (!agent) invalidRequest();
 
+    const requestedModel = (() => {
+      if (!parsed.modelAlias) return agent.model;
+      const alias = parsed.modelAlias.trim();
+      if (!Object.prototype.hasOwnProperty.call(this.options.catalog.models, alias)) {
+        invalidRequest();
+      }
+      return alias;
+    })();
+
     let resolvedWorkspace;
     try {
       const workspaceRequest =
@@ -253,7 +262,7 @@ export class SafeCoreService {
       sessionId: session.sessionId,
       agentId,
       privacyClass: parsed.privacyClass,
-      requestedModel: agent.model,
+      requestedModel,
       workspace: resolvedWorkspace,
       status: "pending",
     });
@@ -269,18 +278,22 @@ export class SafeCoreService {
       payload: {
         agentId,
         privacyClass: parsed.privacyClass,
-        requestedModel: agent.model,
+        requestedModel,
         workspace: workspaceView(run),
       },
     });
 
+    const modelCostsExtra =
+      this.options.catalog.models[requestedModel]?.costsExtra === true;
     void this.options.orchestrator
       .execute({
         sessionId: session.sessionId,
         runId: run.runId,
         prompt: parsed.prompt,
         context: { source: "composer" },
-        allowPaidProvider: parsed.allowPaidProvider,
+        allowPaidProvider:
+          parsed.allowPaidProvider ||
+          (Boolean(parsed.modelAlias) && modelCostsExtra),
         maxCostUsd: parsed.maxCostUsd,
         timeoutMs: parsed.timeoutMs,
       })

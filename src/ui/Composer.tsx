@@ -31,21 +31,6 @@ const EMPTY_CHIPS: ComposerChip[] = [];
 const EMPTY_SKILL_CATALOG: SkillCatalogItem[] = [];
 const EMPTY_MODEL_ALIASES: string[] = [];
 
-const HINTS = [
-  "/select model gemini",
-  "/select model codex",
-  "/select model deepseek-flash",
-  "/skills list",
-  "/skill use sdk",
-  "/skill clear",
-  "/run ls",
-  "/profile conversa",
-  "/voice on",
-  "/voice off",
-  "/clap on",
-  "/clap off",
-];
-
 export function Composer({
   value,
   disabled,
@@ -317,9 +302,8 @@ export function Composer({
                 setSuggestions([]);
               }
             }}
-            placeholder="@modelo  /skill  #caminho  /run …"
+            placeholder="@omniroute  @gemini  @cursor-text  /skill  #Documents/… #Projetos/…"
             aria-label="Compositor"
-            list="slash-hints"
             autoComplete="off"
           />
           {busy && onCancel ? (
@@ -345,11 +329,6 @@ export function Composer({
       <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] tracking-wide text-ink-2/80 sm:text-[11px]">
         {busy ? "recebendo · Esc cancela" : "⌘K · hist ^H · voz ^V · @ / # · cancelar Esc"}
       </p>
-      <datalist id="slash-hints">
-        {HINTS.map((h) => (
-          <option key={h} value={h} />
-        ))}
-      </datalist>
     </form>
   );
 }

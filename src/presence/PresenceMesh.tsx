@@ -102,7 +102,7 @@ function OrbitRings({
 }) {
   const { rings, dust } = useMemo(() => {
     // Round silhouette — radii near sphere, mild tilt (not flattened rings)
-    const ringGeos = [0.98, 1.05, 1.12, 1.18].map((r, i) => {
+    const ringGeos = [0.9, 0.96, 1.02, 1.06].map((r, i) => {
       const curve = new THREE.EllipseCurve(
         0,
         0,
@@ -130,9 +130,9 @@ function OrbitRings({
     const dustPos = new Float32Array(dustCount * 3);
     const dustPhase = new Float32Array(dustCount);
     for (let i = 0; i < dustCount; i += 1) {
-      const ring = 0.98 + (i % 4) * 0.065;
+      const ring = 0.9 + (i % 4) * 0.05;
       const a = (i / dustCount) * Math.PI * 2 * 7;
-      const yTilt = Math.sin(i * 0.37) * 0.14;
+      const yTilt = Math.sin(i * 0.37) * 0.12;
       dustPos[i * 3] = Math.cos(a) * ring;
       dustPos[i * 3 + 1] = yTilt * ring;
       dustPos[i * 3 + 2] = Math.sin(a) * ring;
@@ -564,16 +564,16 @@ export function PresenceMesh({
           delta * current.current.rotation * (0.55 + level * 0.5);
         groupRef.current.rotation.x =
           Math.sin(coreMatRef.current.uniforms.uTime.value * 0.15) *
-            0.12 *
+            0.08 *
             current.current.rotation +
-          s.y * 0.18 * s.strength;
-        groupRef.current.rotation.z = -s.x * 0.1 * s.strength;
+          s.y * 0.12 * s.strength;
+        groupRef.current.rotation.z = -s.x * 0.07 * s.strength;
       }
     }
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} scale={0.9}>
       <OrbitRings dustMatRef={dustMatRef} ringMatRefs={ringMatRefs} />
       <points geometry={coreGeo}>
         <shaderMaterial

@@ -35,7 +35,7 @@ export function localOpenAiApiKey(): string {
 }
 
 export function localOpenAiModel(): string {
-  return optionalEnv("LOCAL_OPENAI_MODEL", "local");
+  return optionalEnv("LOCAL_OPENAI_MODEL", "auto");
 }
 
 export function hasLocalOpenAi(): boolean {

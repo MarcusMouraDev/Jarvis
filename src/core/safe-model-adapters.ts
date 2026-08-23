@@ -560,7 +560,7 @@ export class LocalOpenAICompatibleAdapter extends HttpSafeAdapter {
     const base = readEnv("LOCAL_OPENAI_BASE_URL")?.trim();
     if (!base) throw new Error("missing_env:LOCAL_OPENAI_BASE_URL");
     this.baseUrl = normalizeBaseUrl(base);
-    this.model = readEnv("LOCAL_OPENAI_MODEL")?.trim() || "local";
+    this.model = readEnv("LOCAL_OPENAI_MODEL")?.trim() || "auto";
     this.apiKey = readEnv("LOCAL_OPENAI_API_KEY")?.trim() || "not-needed";
   }
 

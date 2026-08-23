@@ -1,5 +1,5 @@
 version: 1
-default_model: cursor-text
+default_model: local
 models:
   gemini:
     provider: google
@@ -16,7 +16,7 @@ models:
   local:
     provider: local
     costs_extra: false
-    fallback: []
+    fallback: [cursor-text]
 agents:
   Hermes:
     workspace_mode: optional_existing
@@ -30,6 +30,7 @@ agents:
         omniroute.list_models,
         omniroute.check_quota,
         omniroute.compression_status,
+        omniroute.usage_report,
       ]
     memory_policy: manual
     budget_usd: 0
@@ -44,6 +45,7 @@ agents:
         omniroute.list_models,
         omniroute.check_quota,
         omniroute.compression_status,
+        omniroute.usage_report,
       ]
     memory_policy: off
     budget_usd: 0
@@ -60,6 +62,7 @@ agents:
         omniroute.list_models,
         omniroute.check_quota,
         omniroute.compression_status,
+        omniroute.usage_report,
       ]
     memory_policy: manual
     budget_usd: 0

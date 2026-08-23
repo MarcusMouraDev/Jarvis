@@ -27,6 +27,7 @@ export const createRunRequestSchema = z
   .object({
     prompt: z.string().trim().min(1).max(32_000),
     agentId: agentIdSchema.optional(),
+    modelAlias: z.string().trim().min(1).max(64).optional(),
     privacyClass: privacyClassSchema.default("internal"),
     workspace: publicWorkspaceRequestSchema.default({ kind: "none" }),
     allowPaidProvider: z.boolean().default(false),

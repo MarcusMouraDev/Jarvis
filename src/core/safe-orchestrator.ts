@@ -168,7 +168,11 @@ function toolCallSignature(toolId: string, input: JsonValue): string {
 }
 
 function modelContent(prompt: string, context: JsonValue): string {
-  return context === null ? prompt : `${prompt}\n\nContext:\n${stableJson(context)}`;
+  const language =
+    "Responda sempre em português do Brasil, de forma clara e objetiva, salvo pedido contrário do usuário.\n\n";
+  const body =
+    context === null ? prompt : `${prompt}\n\nContext:\n${stableJson(context)}`;
+  return `${language}${body}`;
 }
 
 function eventPayload(event: SafeModelEvent): JsonValue {

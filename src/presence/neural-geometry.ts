@@ -46,7 +46,7 @@ export const DEFAULT_NEURON_COUNT = 220;
 export const DEFAULT_NEIGHBORS = 6;
 export const MAX_EDGES = 1200;
 /** Soft silhouette cap — layered micro must stay at/under this. */
-export const MAX_LAYER_RADIUS = 1.12;
+export const MAX_LAYER_RADIUS = 1.04;
 
 const PROFILES: Record<NeuralQuality, Omit<NeuralProfile, "quality">> = {
   mobile: {
@@ -242,7 +242,7 @@ function packGeometry(
 export function createNeuralGeometry(
   count = DEFAULT_NEURON_COUNT,
   neighbors = DEFAULT_NEIGHBORS,
-  radius = 1.15,
+  radius = 1.05,
 ): NeuralGeometry {
   const points = fibonacciSphere(count, radius);
   const edges = buildEdges(points, neighbors);
@@ -305,18 +305,18 @@ function pointsForLayer(
   phaseOffset: number,
 ): NeuralPoint[] {
   if (layer === "core") {
-    return fibonacciVolume(count, 0.02, 0.55, phaseOffset, 0.42, 0.1);
+    return fibonacciVolume(count, 0.02, 0.5, phaseOffset, 0.42, 0.08);
   }
   if (layer === "cortex") {
-    return fibonacciVolume(count, 0.45, 0.92, phaseOffset, 0.7, 0.12);
+    return fibonacciVolume(count, 0.42, 0.86, phaseOffset, 0.7, 0.1);
   }
   // micro: outer shell — capped for round silhouette
-  return fibonacciVolume(count, 0.8, MAX_LAYER_RADIUS, phaseOffset, 0.85, 0.08);
+  return fibonacciVolume(count, 0.74, MAX_LAYER_RADIUS, phaseOffset, 0.85, 0.06);
 }
 
 /** Cheap fill points (no edges) for dense visual mass. */
 export function createStardustGeometry(count: number): NeuralGeometry {
-  const points = fibonacciVolume(count, 0.05, 1.05, 50_000, 0.6, 0.18);
+  const points = fibonacciVolume(count, 0.05, 0.96, 50_000, 0.6, 0.12);
   return packGeometry(points, []);
 }
 

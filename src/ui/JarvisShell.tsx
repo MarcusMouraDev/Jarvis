@@ -38,7 +38,13 @@ import {
 } from "./HistoryPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { InstrumentBar } from "./InstrumentBar";
+import {
+  OmnirouteStatusChip,
+  OmnirouteUsagePanel,
+  useOmnirouteUsage,
+} from "./OmnirouteUsagePanel";
 import { LastExchange } from "./LastExchange";
+import { PresenceStage } from "./PresenceStage";
 import { StateLabel } from "./StateLabel";
 import {
   TerminalPanel,
@@ -111,8 +117,16 @@ export function JarvisShell() {
   });
 
   const [instrumentHeight, setInstrumentHeight] = useState(56);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const usage = useOmnirouteUsage({ open: usageOpen });
   const onInstrumentHeight = useCallback((h: number) => {
     setInstrumentHeight(Math.max(40, Math.round(h)));
+  }, []);
+
+  useEffect(() => {
+    const desktop = window.jarvisDesktop;
+    if (!desktop) return;
+    return desktop.onOpenUsagePanel(() => setUsageOpen(true));
   }, []);
 
   const [glow, setGlow] = useState(IDLE_PRESENCE_VISUAL.colorA);
@@ -687,6 +701,9 @@ export function JarvisShell() {
       { text: input, chips: composerChips, cursor: input.length },
       modelAlias,
     );
+    if (payload.alias !== modelAlias) {
+      setModelAlias(payload.alias);
+    }
     const provider = getProviderForAlias(payload.alias);
     if (!noticedProviders.current.has(provider)) {
       setFirstUseProvider(provider);
@@ -997,15 +1014,25 @@ export function JarvisShell() {
         voiceOn={voiceOn}
         clapWakeOn={clapWakeOn}
         micPermission={micPermission}
+        extra={
+          <OmnirouteStatusChip
+            report={usage.report}
+            onOpen={() => setUsageOpen(true)}
+          />
+        }
         onHeightChange={onInstrumentHeight}
       />
 
       <main className="relative z-20 flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-3 pt-3 sm:px-4 sm:pt-4">
-        <div className="flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
-          <div
-            className={`presence-stage shrink-0 ${panelOpen ? "presence-stage--compact" : ""}`}
-          >
-            <div className="presence-halo" aria-hidden />
+        <OmnirouteUsagePanel
+          open={usageOpen}
+          report={usage.report}
+          loading={usage.loading}
+          onClose={() => setUsageOpen(false)}
+          onRefresh={() => void usage.refresh()}
+        />
+        <div className="presence-arena flex w-full max-w-3xl flex-1 flex-col items-center justify-center py-2">
+          <PresenceStage state={state} compact={panelOpen}>
             <PresenceField
               state={state}
               levelRef={levelRef}
@@ -1013,9 +1040,9 @@ export function JarvisShell() {
               paused={documentHidden}
               webglAvailable={webglAvailable}
             />
-          </div>
+          </PresenceStage>
 
-          <div className="mt-3 flex w-full flex-col items-center gap-2 sm:mt-4">
+          <div className="presence-caption mt-3 flex w-full flex-col items-center gap-2 sm:mt-4">
             <StateLabel state={state} />
             <FallbackStrip
               visible={fallback.visible}

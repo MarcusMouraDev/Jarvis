@@ -73,7 +73,7 @@ export function PresenceCanvas({
       <Canvas
         className="h-full w-full"
         dpr={dpr}
-        camera={{ position: [0, 0.08, 2.95], fov: 42 }}
+        camera={{ position: [0, 0.06, 3.15], fov: 40 }}
         gl={{
           antialias: true,
           alpha: true,

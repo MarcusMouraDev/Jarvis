@@ -22,6 +22,15 @@ npm run dev
 
 Abra [http://localhost:3000](http://localhost:3000).
 
+### Desktop (Electron)
+
+```bash
+npm run desktop       # OmniRoute sidecar headless + janela Jarvis
+npm run desktop:dev   # idem, Next do Jarvis em turbopack
+```
+
+OmniRoute sobe com `serve --no-open` (não `npm run dev`). Relatórios de uso ficam no chip `omni` da barra. Dashboard OmniRoute só pelo menu da bandeja.
+
 ### Atalhos
 
 | Atalho | Ação |

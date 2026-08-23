@@ -3,8 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { redactSecrets } from "@/core/policy";
 import type { PathContextSummary } from "@/composer/mention-types";
-import { getShellRoot } from "@/tools/shell-policy";
-import { resolveRepoPath } from "./path-policy";
+import {
+  getContextRoot,
+  resolveRepoPath,
+  toContextRelPath,
+} from "./path-policy";
 
 const MAX_BYTES = 512 * 1024;
 const MAX_EXCERPT = 2000;
@@ -70,7 +73,7 @@ function extractSymbols(content: string): string[] {
 
 export function summarizePath(
   relPath: string,
-  root = getShellRoot(),
+  root = getContextRoot(),
 ): PathContextSummary | { error: string } {
   const abs = resolveRepoPath(relPath, root);
   if (!abs) return { error: "caminho negado pela política" };
@@ -82,9 +85,11 @@ export function summarizePath(
     return { error: "arquivo não encontrado" };
   }
 
+  const rel = toContextRelPath(abs, root);
+
   if (st.isDirectory()) {
     return {
-      relPath: path.relative(root, abs).split(path.sep).join("/"),
+      relPath: rel,
       absPath: abs,
       hash: crypto.createHash("sha256").update(abs).digest("hex").slice(0, 16),
       byteSize: 0,
@@ -111,7 +116,6 @@ export function summarizePath(
   const redacted = redactSecrets(raw);
   const excerpt = redacted.slice(0, MAX_EXCERPT);
   const hash = crypto.createHash("sha256").update(raw).digest("hex").slice(0, 16);
-  const rel = path.relative(root, abs).split(path.sep).join("/");
 
   return {
     relPath: rel,

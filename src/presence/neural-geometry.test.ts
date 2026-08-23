@@ -99,7 +99,7 @@ describe("neural-geometry", () => {
       maxRadius(geometry.micro.points),
     );
     expect(layeredMax).toBeLessThanOrEqual(MAX_LAYER_RADIUS + 0.02);
-    expect(maxRadius(geometry.stardust.points)).toBeLessThanOrEqual(1.15);
+    expect(maxRadius(geometry.stardust.points)).toBeLessThanOrEqual(1.0);
   });
 
   it("camadas layered são determinísticas", () => {

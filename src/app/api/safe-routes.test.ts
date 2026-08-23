@@ -103,7 +103,7 @@ describe("safe-core JSON routes", () => {
     };
     expect(agentBody.agents[0]).toMatchObject({
       id: "Hermes",
-      modelAlias: "cursor-text",
+      modelAlias: "local",
     });
     const workspaceBody = await workspaces.text();
     expect(workspaceBody).toContain("jarvis");

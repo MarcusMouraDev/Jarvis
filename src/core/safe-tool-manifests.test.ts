@@ -17,6 +17,7 @@ describe("safe tool manifests", () => {
       "omniroute.list_models",
       "omniroute.check_quota",
       "omniroute.compression_status",
+      "omniroute.usage_report",
     ]);
     for (const tool of manifests) {
       expect(tool.version).toMatch(/^1\.\d+\.\d+$/);

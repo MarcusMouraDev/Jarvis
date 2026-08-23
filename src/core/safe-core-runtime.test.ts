@@ -96,7 +96,7 @@ describe("safe-core runtime", () => {
     });
 
     expect(runtime.store).toBeDefined();
-    expect(runtime.catalog.defaultModel).toBe("cursor-text");
+    expect(runtime.catalog.defaultModel).toBe("local");
     expect(runtime.gateway).toBeDefined();
     expect(runtime.orchestrator).toBeDefined();
     expect(runtime.service.listAgents()[0]?.id).toBe("Hermes");

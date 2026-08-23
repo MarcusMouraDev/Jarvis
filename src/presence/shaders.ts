@@ -42,11 +42,11 @@ void main() {
   float pull = 0.0;
   if (uPointerStrength > 0.001) {
     pull = smoothstep(0.45, 1.0, dot(n, normalize(uPointer)));
-    pos += n * pull * uPointerStrength * 0.12;
+    pos += n * pull * uPointerStrength * 0.08;
     vGlow += pull * uPointerStrength * 0.28;
   }
   if (uReducedMotion < 0.5 && uTurbulence > 0.01) {
-    pos += n * sin(uTime * (2.0 + aPhase * 3.2) + aPhase * 12.0) * uTurbulence * 0.028;
+    pos += n * sin(uTime * (2.0 + aPhase * 3.2) + aPhase * 12.0) * uTurbulence * 0.018;
   }
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);

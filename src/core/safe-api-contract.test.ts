@@ -23,6 +23,21 @@ describe("safe API contracts", () => {
     });
   });
 
+  it("accepts an optional modelAlias override", () => {
+    expect(
+      createRunRequestSchema.parse({
+        prompt: "oi",
+        modelAlias: "gemini",
+        allowPaidProvider: true,
+        workspace: { kind: "none" },
+      }),
+    ).toMatchObject({
+      prompt: "oi",
+      modelAlias: "gemini",
+      allowPaidProvider: true,
+    });
+  });
+
   it("rejects unknown fields, traversal, invalid budgets and empty prompts", () => {
     expect(() =>
       createRunRequestSchema.parse({

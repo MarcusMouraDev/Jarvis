@@ -11,7 +11,9 @@ import {
   type OmnirouteCompressionStatusOutput,
   type OmnirouteListModelsOutput,
   type OmnirouteMcpToolId,
+  type OmnirouteUsageReportOutput,
 } from "./manifest";
+import { fetchOmnirouteUsageReport } from "./usage-report";
 
 export type OmnirouteMcpRunResult =
   | {
@@ -19,7 +21,8 @@ export type OmnirouteMcpRunResult =
       output:
         | OmnirouteListModelsOutput
         | OmnirouteCheckQuotaOutput
-        | OmnirouteCompressionStatusOutput;
+        | OmnirouteCompressionStatusOutput
+        | OmnirouteUsageReportOutput;
     }
   | { status: "denied"; reason: string }
   | { status: "failed"; reason: string };
@@ -90,6 +93,16 @@ export async function runOmnirouteMcpTool(
         output: {
           quota: sanitizeOmnirouteJson(payload),
           source: "omniroute:/api/usage/quota",
+        },
+      };
+    }
+    if (id === "omniroute.usage_report") {
+      const report = await fetchOmnirouteUsageReport(client);
+      return {
+        status: "ok",
+        output: {
+          report,
+          source: "omniroute:/api/usage/analytics?range=7d",
         },
       };
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { MicPermission, PrivacyClass } from "@/core/types";
 import { MIC_PERMISSION_LABELS } from "@/audio/mic-permission";
 
@@ -14,6 +14,7 @@ interface InstrumentBarProps {
   voiceOn: boolean;
   clapWakeOn: boolean;
   micPermission: MicPermission;
+  extra?: ReactNode;
   onHeightChange?: (height: number) => void;
 }
 
@@ -35,6 +36,7 @@ export function InstrumentBar({
   voiceOn,
   clapWakeOn,
   micPermission,
+  extra,
   onHeightChange,
 }: InstrumentBarProps) {
   const ref = useRef<HTMLElement>(null);
@@ -87,6 +89,7 @@ export function InstrumentBar({
           </span>
           <span className="whitespace-nowrap">{voiceOn ? "voz:on" : "voz:off"}</span>
           <span className="whitespace-nowrap">{clapWakeOn ? "palmas:on" : "palmas:off"}</span>
+          {extra}
         </div>
       </div>
     </header>

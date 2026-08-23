@@ -97,4 +97,42 @@ describe("omniroute-mcp", () => {
       reason: "omniroute_host_not_loopback",
     });
   });
+
+  it("returns a 7d usage report through a mocked loopback client", async () => {
+    process.env.JARVIS_OMNIROUTE_MCP = "1";
+    const client = new OmnirouteMcpClient({
+      baseUrl: "http://127.0.0.1:20128",
+      fetchImpl: (async (input) => {
+        const url = String(input);
+        if (url.includes("/api/usage/quota")) {
+          return new Response(JSON.stringify({ providers: [] }), { status: 200 });
+        }
+        if (url.includes("/api/usage/analytics")) {
+          return new Response(
+            JSON.stringify({
+              summary: {
+                totalRequests: 8,
+                promptTokens: 40,
+                completionTokens: 12,
+                totalCost: 0.2,
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ enabled: true }), { status: 200 });
+      }) as typeof fetch,
+    });
+    const result = await runOmnirouteMcpTool(
+      "omniroute.usage_report",
+      {},
+      { client },
+    );
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.output).toMatchObject({
+      source: "omniroute:/api/usage/analytics?range=7d",
+      report: { omniUp: true, totals: { requests: 8 } },
+    });
+  });
 });

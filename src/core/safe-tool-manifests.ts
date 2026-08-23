@@ -9,6 +9,7 @@ export const safeToolIds = [
   "omniroute.list_models",
   "omniroute.check_quota",
   "omniroute.compression_status",
+  "omniroute.usage_report",
 ] as const;
 
 export type SafeToolId = (typeof safeToolIds)[number];
@@ -208,6 +209,25 @@ const manifests: Record<SafeToolId, SafeToolManifest> = {
     outputSchema: z
       .object({
         status: z.unknown(),
+        source: z.string(),
+      })
+      .strict(),
+  },
+  "omniroute.usage_report": {
+    id: "omniroute.usage_report",
+    version: "1.0.0",
+    description: "Reads OmniRoute 7-day usage totals and provider quota without mutating state.",
+    risk: "read",
+    sideEffect: "none",
+    requiredScopes: ["omniroute:read"],
+    idempotent: true,
+    supportsPreview: false,
+    timeoutMs: 12_000,
+    maxOutputBytes: 100_000,
+    inputSchema: z.object({}).strict(),
+    outputSchema: z
+      .object({
+        report: z.unknown(),
         source: z.string(),
       })
       .strict(),

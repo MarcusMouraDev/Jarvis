@@ -76,11 +76,11 @@ describe("agent catalog", () => {
 
     const catalog = loadAgentCatalogFromYaml(raw);
 
-    expect(catalog.defaultModel).toBe("cursor-text");
+    expect(catalog.defaultModel).toBe("local");
     expect(catalog.models.local).toMatchObject({
       provider: "local",
       costsExtra: false,
-      fallback: [],
+      fallback: ["cursor-text"],
     });
     expect(catalog.models.gemini.fallback).toEqual(["codex-openai"]);
     expect(catalog.models["codex-openai"].fallback).toEqual(["cursor-text"]);
@@ -99,6 +99,7 @@ describe("agent catalog", () => {
         "omniroute.list_models",
         "omniroute.check_quota",
         "omniroute.compression_status",
+        "omniroute.usage_report",
       ],
       budgetUsd: 0,
     });

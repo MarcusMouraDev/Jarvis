@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# j — sobe OmniRoute (:20128) + Jarvis (:3000) e abre o browser.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+"$SCRIPT_DIR/sidecars.sh" start
+
+URL="http://127.0.0.1:3000/"
+echo "→ $URL"
+if [[ "${JARVIS_ELECTRON:-}" == "1" ]]; then
+  exit 0
+fi
+if command -v open >/dev/null 2>&1; then
+  open "$URL" >/dev/null 2>&1 || true
+fi

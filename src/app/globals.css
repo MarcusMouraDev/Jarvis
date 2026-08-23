@@ -78,6 +78,235 @@
     z-index: 20;
     width: clamp(220px, 58vmin, 520px);
     height: clamp(220px, 58vmin, 520px);
+    isolation: isolate;
+  }
+
+  .presence-stage__core {
+    position: relative;
+    z-index: 30;
+    height: 100%;
+    width: 100%;
+  }
+
+  .presence-arena {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .presence-arena::before,
+  .presence-arena::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    top: 4%;
+    bottom: 18%;
+    width: 1px;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      color-mix(in oklab, var(--state-glow, #66b0f2) 32%, transparent) 42%,
+      color-mix(in oklab, var(--state-glow, #66b0f2) 18%, transparent) 58%,
+      transparent
+    );
+    opacity: 0.45;
+    filter: blur(0.2px);
+  }
+
+  .presence-arena::before {
+    left: clamp(0.5rem, 4vw, 2rem);
+  }
+
+  .presence-arena::after {
+    right: clamp(0.5rem, 4vw, 2rem);
+  }
+
+  .presence-atmosphere {
+    pointer-events: none;
+    position: absolute;
+    inset: -22%;
+    z-index: 5;
+  }
+
+  .presence-atmosphere__aurora {
+    position: absolute;
+    inset: -8%;
+    border-radius: 9999px;
+    background:
+      conic-gradient(
+        from 210deg at 50% 48%,
+        transparent 0deg,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 16%, transparent) 48deg,
+        transparent 96deg,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 10%, transparent) 168deg,
+        transparent 248deg,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 8%, transparent) 312deg,
+        transparent 360deg
+      );
+    filter: blur(36px);
+    opacity: 0.55;
+    animation: aurora-shift 28s var(--ease-in-out) infinite alternate;
+  }
+
+  .presence-atmosphere__stars {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    opacity: 0.85;
+    background-image:
+      radial-gradient(1px 1px at 22% 28%, oklch(0.94 0.02 250 / 0.55), transparent),
+      radial-gradient(1px 1px at 68% 24%, oklch(0.9 0.03 235 / 0.45), transparent),
+      radial-gradient(1px 1px at 38% 62%, oklch(0.92 0.02 250 / 0.4), transparent),
+      radial-gradient(1px 1px at 74% 58%, oklch(0.88 0.04 220 / 0.35), transparent),
+      radial-gradient(1.5px 1.5px at 48% 42%, oklch(0.96 0.02 250 / 0.65), transparent),
+      radial-gradient(1px 1px at 14% 52%, oklch(0.9 0.02 250 / 0.38), transparent),
+      radial-gradient(1px 1px at 86% 44%, oklch(0.9 0.03 235 / 0.42), transparent);
+    mask-image: radial-gradient(circle at 50% 50%, black 18%, transparent 72%);
+  }
+
+  .presence-atmosphere__beams {
+    position: absolute;
+    inset: 0;
+    opacity: 0.35;
+    background:
+      linear-gradient(
+        118deg,
+        transparent 42%,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 10%, transparent) 49%,
+        transparent 56%
+      ),
+      linear-gradient(
+        62deg,
+        transparent 38%,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 8%, transparent) 46%,
+        transparent 54%
+      );
+    mask-image: radial-gradient(ellipse 70% 65% at 50% 50%, black, transparent 78%);
+    animation: beam-drift 18s var(--ease-in-out) infinite alternate;
+  }
+
+  .presence-atmosphere__grid {
+    position: absolute;
+    left: 50%;
+    bottom: -6%;
+    width: 130%;
+    height: 52%;
+    transform: translateX(-50%) perspective(720px) rotateX(72deg);
+    transform-origin: center top;
+    background-image:
+      linear-gradient(
+        color-mix(in oklab, var(--state-glow, #66b0f2) 14%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 14%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 42px 42px;
+    opacity: 0.22;
+    mask-image: radial-gradient(ellipse 68% 88% at 50% 0%, black, transparent 78%);
+  }
+
+  .presence-atmosphere__floor {
+    position: absolute;
+    left: 50%;
+    bottom: 6%;
+    width: 92%;
+    height: 34%;
+    transform: translateX(-50%);
+    border-radius: 9999px;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      color-mix(in oklab, var(--state-glow, #66b0f2) 28%, transparent),
+      transparent 68%
+    );
+    filter: blur(14px);
+    opacity: 0.75;
+  }
+
+  .presence-atmosphere__pedestal {
+    position: absolute;
+    left: 50%;
+    bottom: 10%;
+    width: 58%;
+    height: 10%;
+    transform: translateX(-50%);
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--state-glow, #66b0f2) 22%, transparent);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--state-glow, #66b0f2) 8%, transparent),
+      transparent 85%
+    );
+    box-shadow:
+      0 0 40px color-mix(in oklab, var(--state-glow, #66b0f2) 18%, transparent),
+      inset 0 1px 0 oklch(1 0 0 / 0.06);
+    opacity: 0.85;
+  }
+
+  .presence-atmosphere__orbit {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--state-glow, #66b0f2) 22%, transparent);
+    transform: translate(-50%, -50%);
+  }
+
+  .presence-atmosphere__orbit--a {
+    width: 108%;
+    height: 108%;
+    opacity: 0.35;
+    border-style: dashed;
+    border-width: 1px;
+    animation: orbit-drift 72s linear infinite;
+  }
+
+  .presence-atmosphere__orbit--b {
+    width: 124%;
+    height: 124%;
+    opacity: 0.22;
+    border-color: color-mix(in oklab, var(--state-glow, #66b0f2) 14%, transparent);
+    animation: orbit-drift 96s linear infinite reverse;
+  }
+
+  .presence-atmosphere__orbit--c {
+    width: 142%;
+    height: 142%;
+    opacity: 0.14;
+    border-width: 0.5px;
+    box-shadow: 0 0 24px color-mix(in oklab, var(--state-glow, #66b0f2) 8%, transparent);
+    animation: orbit-drift 120s linear infinite;
+  }
+
+  .presence-stage[data-presence-state="thinking"] .presence-atmosphere__aurora {
+    opacity: 0.72;
+    animation-duration: 14s;
+  }
+
+  .presence-stage[data-presence-state="thinking"] .presence-halo {
+    animation-duration: 2.6s;
+  }
+
+  .presence-stage[data-presence-state="listening"] .presence-halo {
+    animation-duration: 3.4s;
+  }
+
+  .presence-stage[data-presence-state="speaking"] .presence-halo {
+    animation-duration: 2.2s;
+  }
+
+  .presence-stage[data-presence-state="asking"] .presence-halo {
+    animation-duration: 1.8s;
+  }
+
+  .presence-stage[data-presence-state="idle"] .presence-halo {
+    animation-duration: 7s;
+  }
+
+  .presence-stage[data-presence-state="failure"] .presence-atmosphere__aurora {
+    opacity: 0.25;
+    filter: blur(48px) saturate(0.4);
   }
 
   .presence-stage--compact {
@@ -90,22 +319,48 @@
     position: absolute;
     inset: 0;
     z-index: 0;
+    overflow: hidden;
     background:
       radial-gradient(
-        ellipse 58% 48% at 50% 42%,
-        color-mix(in oklab, var(--state-glow, #66b0f2) 10%, transparent),
-        transparent 72%
+        ellipse 62% 52% at 50% 38%,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 14%, transparent),
+        transparent 74%
       ),
       radial-gradient(
-        ellipse 100% 80% at 50% 100%,
-        oklch(0.08 0.015 250 / 0.5),
-        transparent 55%
+        ellipse 90% 55% at 50% 105%,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 6%, oklch(0.06 0.02 252 / 0.85)),
+        transparent 62%
       ),
       radial-gradient(
-        ellipse 120% 100% at 50% 0%,
-        oklch(0.06 0.015 252 / 0.4),
-        transparent 50%
+        ellipse 120% 90% at 50% -8%,
+        oklch(0.08 0.022 252 / 0.55),
+        transparent 58%
+      ),
+      linear-gradient(
+        180deg,
+        oklch(0.07 0.018 252 / 0.35) 0%,
+        transparent 28%,
+        transparent 72%,
+        oklch(0.05 0.015 250 / 0.45) 100%
       );
+  }
+
+  .shell-vignette::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.7;
+    background-image:
+      radial-gradient(1px 1px at 12% 18%, oklch(0.94 0.02 250 / 0.45), transparent),
+      radial-gradient(1px 1px at 28% 72%, oklch(0.9 0.03 235 / 0.35), transparent),
+      radial-gradient(1px 1px at 44% 34%, oklch(0.92 0.02 250 / 0.3), transparent),
+      radial-gradient(1px 1px at 61% 58%, oklch(0.88 0.04 220 / 0.28), transparent),
+      radial-gradient(1px 1px at 78% 22%, oklch(0.93 0.02 250 / 0.38), transparent),
+      radial-gradient(1px 1px at 88% 68%, oklch(0.86 0.03 235 / 0.25), transparent),
+      radial-gradient(1.5px 1.5px at 18% 48%, oklch(0.95 0.02 250 / 0.5), transparent),
+      radial-gradient(1.5px 1.5px at 52% 12%, oklch(0.9 0.03 235 / 0.4), transparent),
+      radial-gradient(1px 1px at 92% 42%, oklch(0.9 0.02 250 / 0.32), transparent);
+    mask-image: radial-gradient(ellipse 85% 75% at 50% 42%, black 20%, transparent 78%);
   }
 
   .shell-vignette::after {
@@ -125,10 +380,47 @@
     border-radius: 9999px;
     background: radial-gradient(
       circle at 50% 50%,
-      color-mix(in oklab, var(--state-glow, #66b0f2) 14%, transparent),
-      transparent 70%
+      color-mix(in oklab, var(--state-glow, #66b0f2) 18%, transparent),
+      transparent 68%
     );
-    filter: blur(22px);
+    filter: blur(26px);
+    opacity: 0.62;
+    animation: presence-glow-pulse 5s var(--ease-in-out) infinite;
+  }
+
+  .presence-halo--inner {
+    inset: 2%;
+    z-index: 12;
+    filter: blur(12px);
+    opacity: 0.45;
+    background: radial-gradient(
+      circle at 50% 48%,
+      color-mix(in oklab, var(--state-glow, #66b0f2) 32%, transparent),
+      transparent 58%
+    );
+    animation: presence-glow-pulse 4.2s var(--ease-in-out) infinite reverse;
+  }
+
+  .presence-caption {
+    position: relative;
+    z-index: 25;
+  }
+
+  .presence-caption::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    top: -2rem;
+    left: 50%;
+    width: min(320px, 78%);
+    height: 3.5rem;
+    transform: translateX(-50%);
+    background: radial-gradient(
+      ellipse at 50% 0%,
+      color-mix(in oklab, var(--state-glow, #66b0f2) 16%, transparent),
+      transparent 72%
+    );
+    filter: blur(18px);
     opacity: 0.55;
   }
 
@@ -348,7 +640,12 @@
     .neural-fallback--breathe .neural-fallback__sphere,
     .presence-fallback,
     .response-reveal,
-    .safe-approval-disclosure {
+    .safe-approval-disclosure,
+    .presence-halo,
+    .presence-halo--inner,
+    .presence-atmosphere__aurora,
+    .presence-atmosphere__beams,
+    .presence-atmosphere__orbit {
       animation: none;
       transition: none;
     }
@@ -373,6 +670,49 @@
   50% {
     transform: scale(1.015);
     opacity: 1;
+  }
+}
+
+@keyframes presence-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes aurora-shift {
+  0% {
+    transform: rotate(-6deg) scale(0.96);
+    opacity: 0.42;
+  }
+  100% {
+    transform: rotate(8deg) scale(1.04);
+    opacity: 0.62;
+  }
+}
+
+@keyframes beam-drift {
+  0% {
+    opacity: 0.22;
+    transform: translateX(-1%) scale(1);
+  }
+  100% {
+    opacity: 0.4;
+    transform: translateX(1.5%) scale(1.02);
+  }
+}
+
+@keyframes orbit-drift {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
   }
 }
 

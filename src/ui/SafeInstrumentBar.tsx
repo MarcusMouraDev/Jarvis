@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { PrivacyClass } from "@/core/types";
 
 interface SafeInstrumentBarProps {
@@ -8,6 +8,7 @@ interface SafeInstrumentBarProps {
   privacyClass: PrivacyClass;
   model: { provider: string; model: string } | null;
   status: string | null;
+  extra?: ReactNode;
   onHeightChange?: (height: number) => void;
 }
 
@@ -16,6 +17,7 @@ export function SafeInstrumentBar({
   privacyClass,
   model,
   status,
+  extra,
   onHeightChange,
 }: SafeInstrumentBarProps) {
   const ref = useRef<HTMLElement>(null);
@@ -55,7 +57,10 @@ export function SafeInstrumentBar({
             <span>modelo pendente</span>
           )}
         </div>
-        <div className="whitespace-nowrap text-ink-1">{status ?? "idle"}</div>
+        <div className="flex items-center gap-2 whitespace-nowrap text-ink-1">
+          {status ?? "idle"}
+          {extra}
+        </div>
       </div>
     </header>
   );

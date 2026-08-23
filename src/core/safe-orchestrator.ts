@@ -460,6 +460,8 @@ export class SafeModelOrchestrator {
     if (active?.sessionId === input.sessionId) {
       active.controller.abort("cancelled");
       this.discardRunContinuations(input.sessionId, input.runId);
+      const run = this.options.store.getRun(input.runId);
+      if (run) this.abortRun(run, "cancelled");
       return true;
     }
     const run = this.options.store.getRun(input.runId);
@@ -776,13 +778,20 @@ export class SafeModelOrchestrator {
     eventPersisted = false,
   ): SafeOrchestratorResult {
     const reason = rawReason === "timeout" ? "timeout" : "cancelled";
-    if (!eventPersisted) this.append(run.runId, "abort", { reason });
     const current = this.options.store.getRun(run.runId);
-    if (current && ["running", "waiting_approval"].includes(current.status)) {
+    if (current?.status === "cancelled") {
+      return { status: "cancelled", runId: run.runId };
+    }
+    if (current?.status === "failed") {
+      return { status: "failed", runId: run.runId, reason };
+    }
+    if (!eventPersisted) this.append(run.runId, "abort", { reason });
+    const after = this.options.store.getRun(run.runId);
+    if (after && ["pending", "running", "waiting_approval"].includes(after.status)) {
       this.options.store.transitionRunStatus({
         runId: run.runId,
         sessionId: run.sessionId!,
-        from: [current.status],
+        from: [after.status],
         to: reason === "cancelled" ? "cancelled" : "failed",
       });
     }

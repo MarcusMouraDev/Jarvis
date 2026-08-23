@@ -870,6 +870,7 @@ describe("SafeModelOrchestrator", () => {
 
     await Promise.resolve();
     expect(orchestrator.cancel({ sessionId: "session-1", runId })).toBe(true);
+    expect(store.getRun(runId)?.status).toBe("cancelled");
 
     await expect(running).resolves.toEqual({ status: "cancelled", runId });
     expect(store.getRun(runId)?.status).toBe("cancelled");

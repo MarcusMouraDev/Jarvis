@@ -35,6 +35,8 @@
   --dur-press: 140ms;
   --dur-pop: 180ms;
   --dur-panel: 240ms;
+  --dur-state-flash: 420ms;
+  --tracking-hud: 0.14em;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -221,7 +223,7 @@
       transparent 68%
     );
     filter: blur(14px);
-    opacity: 0.75;
+    opacity: 0.55;
   }
 
   .presence-atmosphere__pedestal {
@@ -384,7 +386,7 @@
       transparent 68%
     );
     filter: blur(26px);
-    opacity: 0.62;
+    opacity: 0.5;
     animation: presence-glow-pulse 5s var(--ease-in-out) infinite;
   }
 
@@ -392,7 +394,7 @@
     inset: 2%;
     z-index: 12;
     filter: blur(12px);
-    opacity: 0.45;
+    opacity: 0.34;
     background: radial-gradient(
       circle at 50% 48%,
       color-mix(in oklab, var(--state-glow, #66b0f2) 32%, transparent),
@@ -404,6 +406,172 @@
   .presence-caption {
     position: relative;
     z-index: 25;
+  }
+
+  .state-label {
+    font-size: clamp(0.9rem, 1.8vmin, 1.15rem);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    text-shadow: 0 0 14px color-mix(in oklab, var(--state-glow, #66b0f2) 28%, transparent);
+  }
+
+  .hud-mono {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-hud);
+    text-transform: uppercase;
+    font-size: 10px;
+  }
+
+  .presence-stage__flash {
+    pointer-events: none;
+    position: absolute;
+    inset: 8%;
+    z-index: 21;
+    border-radius: 9999px;
+    background: radial-gradient(
+      circle at 50% 50%,
+      color-mix(in oklab, var(--state-glow, #66b0f2) 35%, transparent),
+      transparent 68%
+    );
+    animation: state-flash var(--dur-state-flash) var(--ease-out);
+  }
+
+  .telemetry-ring {
+    pointer-events: none;
+    position: absolute;
+    inset: -6%;
+    z-index: 22;
+    overflow: visible;
+    animation: telemetry-spin 180s linear infinite;
+  }
+
+  .telemetry-tick {
+    stroke: color-mix(in oklab, var(--state-glow, #66b0f2) 12%, transparent);
+    stroke-width: 0.3;
+  }
+
+  .telemetry-tick--major {
+    stroke: color-mix(in oklab, var(--state-glow, #66b0f2) 24%, transparent);
+    stroke-width: 0.45;
+  }
+
+  .telemetry-track,
+  .telemetry-arc {
+    fill: none;
+    stroke-linecap: round;
+  }
+
+  .telemetry-track {
+    stroke: color-mix(in oklab, var(--state-glow, #66b0f2) 12%, transparent);
+    stroke-width: 0.8;
+  }
+
+  .telemetry-arc {
+    stroke: color-mix(in oklab, var(--state-glow, #66b0f2) 70%, transparent);
+    stroke-width: 1.4;
+    filter: drop-shadow(
+      0 0 3px color-mix(in oklab, var(--state-glow, #66b0f2) 40%, transparent)
+    );
+    transition: stroke-dasharray var(--dur-panel) var(--ease-out);
+  }
+
+  .hud-brackets {
+    pointer-events: none;
+    position: absolute;
+    inset: 0.5rem;
+    z-index: 24;
+  }
+
+  .hud-bracket {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-color: color-mix(in oklab, var(--state-glow, #66b0f2) 45%, transparent);
+    border-style: solid;
+    border-width: 0;
+  }
+
+  .hud-bracket--tl {
+    top: 0;
+    left: 0;
+    border-top-width: 1px;
+    border-left-width: 1px;
+  }
+
+  .hud-bracket--tr {
+    top: 0;
+    right: 0;
+    border-top-width: 1px;
+    border-right-width: 1px;
+  }
+
+  .hud-bracket--bl {
+    bottom: 0;
+    left: 0;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+  }
+
+  .hud-bracket--br {
+    bottom: 0;
+    right: 0;
+    border-bottom-width: 1px;
+    border-right-width: 1px;
+  }
+
+  .hud-scan {
+    display: none;
+  }
+
+  .hud-readouts {
+    pointer-events: none;
+    position: absolute;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    z-index: 24;
+    display: grid;
+    gap: 0.15rem;
+    opacity: 0.55;
+  }
+
+  .hud-readout {
+    display: flex;
+    gap: 0.4rem;
+    align-items: baseline;
+  }
+
+  .hud-readout dt {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-hud);
+    text-transform: uppercase;
+    font-size: 10px;
+    color: color-mix(in oklab, var(--color-ink-2) 85%, transparent);
+  }
+
+  .hud-readout dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-ink-1);
+  }
+
+  .hud-reticle {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 23;
+    background:
+      radial-gradient(
+        circle 3px at var(--rx, 50%) var(--ry, 50%),
+        color-mix(in oklab, var(--state-glow, #66b0f2) 60%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        circle 26px at var(--rx, 50%) var(--ry, 50%),
+        transparent 22px,
+        color-mix(in oklab, var(--state-glow, #66b0f2) 16%, transparent) 23px,
+        transparent 25px
+      );
   }
 
   .presence-caption::before {
@@ -645,7 +813,11 @@
     .presence-halo--inner,
     .presence-atmosphere__aurora,
     .presence-atmosphere__beams,
-    .presence-atmosphere__orbit {
+    .presence-atmosphere__orbit,
+    .presence-stage__flash,
+    .telemetry-ring,
+    .hud-scan,
+    .telemetry-arc {
       animation: none;
       transition: none;
     }
@@ -713,6 +885,42 @@
   }
   to {
     transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes telemetry-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes state-flash {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes hud-sweep {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10%,
+  90% {
+    opacity: 0.5;
+  }
+  100% {
+    top: calc(100% - 1px);
+    opacity: 0;
   }
 }
 

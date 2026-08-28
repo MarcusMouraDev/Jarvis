@@ -16,7 +16,6 @@ describe("safe UI contract", () => {
 
   it("keeps SafeJarvisShell free of legacy executors and exposes cancel", () => {
     const source = read("./SafeJarvisShell.tsx");
-    expect(source).toContain("<SafeAgentSelector");
     expect(source).toContain("disabled={runIsActive}");
     expect(source).toContain("<SafeApprovalCard");
     expect(source).toContain("cancel");
@@ -24,6 +23,7 @@ describe("safe UI contract", () => {
     expect(source).toContain("SAFE_MODEL_PICKER_ALIASES");
     expect(source).toContain("OmnirouteUsagePanel");
     expect(source).toContain("OmnirouteStatusChip");
+    expect(source).not.toContain("SafeAgentSelector");
     expect(source).not.toMatch(/from ["']@\/lib\/chat-client["']/);
     expect(source).not.toMatch(/from ["']@\/lib\/shell-client["']/);
     expect(source).not.toMatch(/from ["']\.\/JarvisShell["']/);
@@ -37,17 +37,27 @@ describe("safe UI contract", () => {
     expect(source).toMatch(/<details/);
   });
 
-  it("disables agent switching while a run is active", () => {
-    const source = read("./SafeAgentSelector.tsx");
-    expect(source).toContain("disabled={runIsActive}");
+  it("shows Hermes as the sole safe agent in the status bar", () => {
+    const source = read("./SafeJarvisShell.tsx");
     expect(source).toContain("Hermes");
+    expect(source).not.toContain("SafeAgentSelector");
   });
 
   it("liga o HUD a telemetria real e mata o level morto", () => {
     const shell = read("./SafeJarvisShell.tsx");
     expect(shell).toContain("buildTelemetry");
     expect(shell).toContain("useStreamLevel");
+    expect(shell).toContain("SubagentRail");
+    expect(shell).toContain("TaskGraphPanel");
     expect(shell).not.toContain("useRef(0)");
+  });
+
+  it("expõe cron, canais e install CUA no Ambiente", () => {
+    const panel = read("./SafeLearningPanel.tsx");
+    expect(panel).toContain("AmbienteCron");
+    expect(panel).toContain("AmbienteChannels");
+    expect(panel).toContain("Instalar computer-use");
+    expect(panel).toContain("onSelectSession");
   });
 
   it("mantem o HUD sem numero fixo, lendo so do snapshot", () => {

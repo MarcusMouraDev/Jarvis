@@ -26,15 +26,8 @@ export function PresenceStage({
       data-presence-state={state}
     >
       <div className="presence-atmosphere" aria-hidden>
-        <div className="presence-atmosphere__aurora" />
-        <div className="presence-atmosphere__stars" />
-        <div className="presence-atmosphere__beams" />
-        <div className="presence-atmosphere__grid" />
         <div className="presence-atmosphere__floor" />
         <div className="presence-atmosphere__pedestal" />
-        <div className="presence-atmosphere__orbit presence-atmosphere__orbit--a" />
-        <div className="presence-atmosphere__orbit presence-atmosphere__orbit--b" />
-        <div className="presence-atmosphere__orbit presence-atmosphere__orbit--c" />
       </div>
       <div key={state} className="presence-stage__flash" aria-hidden />
       <div className="presence-halo" aria-hidden />

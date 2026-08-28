@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { OmnirouteMcpClient } from "./client";
-import { fetchOmnirouteUsageReport, mapOmnirouteUsageReport } from "./usage-report";
+import {
+  fetchOmnirouteUsageReport,
+  mapOmnirouteUsageReport,
+  omniChipLabel,
+} from "./usage-report";
 
 describe("mapOmnirouteUsageReport", () => {
   it("maps quota, 7d analytics totals, and compression from OmniRoute payloads", () => {
@@ -101,7 +105,6 @@ describe("fetchOmnirouteUsageReport", () => {
 
 describe("omniChipLabel", () => {
   it("shows down, ok, or the tightest remaining quota", async () => {
-    const { omniChipLabel } = await import("./usage-report");
     expect(omniChipLabel({ omniUp: false, criticalPercentRemaining: 80 })).toBe(
       "omni · down",
     );

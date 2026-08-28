@@ -148,6 +148,39 @@ describe("safe-run-reducer", () => {
     expect(speaking.presence).toBe("speaking");
   });
 
+  it("tracks subagents, tools and clarify prompts", () => {
+    let state = applySafeEvent(
+      initialSafeRunState(),
+      event({
+        eventId: "s1",
+        seq: 1,
+        type: "subagent.started",
+        payload: { id: "child-1", name: "pesquisa" },
+      }),
+    );
+    state = applySafeEvent(
+      state,
+      event({
+        eventId: "t1",
+        seq: 2,
+        type: "tool.started",
+        payload: { toolId: "image_generate", name: "image_generate" },
+      }),
+    );
+    state = applySafeEvent(
+      state,
+      event({
+        eventId: "c1",
+        seq: 3,
+        type: "clarify.required",
+        payload: { requestId: "q1", prompt: "qual tamanho?" },
+      }),
+    );
+    expect(state.subagents).toEqual([{ id: "child-1", name: "pesquisa", status: "running" }]);
+    expect(state.tools[0]).toMatchObject({ toolId: "image_generate", status: "started" });
+    expect(state.pendingClarify).toEqual({ requestId: "q1", prompt: "qual tamanho?" });
+  });
+
   it("never mutates presence without an envelope", () => {
     const state: SafeRunUiState = initialSafeRunState();
     expect(state.presence).toBe("idle");

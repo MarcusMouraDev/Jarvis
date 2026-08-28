@@ -904,7 +904,7 @@ export function JarvisShell() {
   const sendChatRef = useRef(sendChat);
   useEffect(() => {
     sendChatRef.current = sendChat;
-  }, [sendChat]);
+  });
 
   const handleVoiceTranscript = useCallback(
     async (text: string) => {

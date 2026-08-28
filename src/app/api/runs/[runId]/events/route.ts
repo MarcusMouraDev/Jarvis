@@ -1,4 +1,4 @@
-import { getSafeCoreRuntime } from "@/core/safe-core-runtime";
+import { getCoreStore } from "@/core/core-store-runtime";
 import {
   singleStoredEventStream,
   streamStoredEvents,
@@ -8,6 +8,7 @@ import { requireProtectedRequest } from "@/core/session-security";
 import { isSafeAgentCoreEnabled } from "@/integrations/flags";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 interface EventsRouteContext {
   params: Promise<{ runId: string }>;
@@ -34,11 +35,11 @@ export async function GET(request: Request, context: EventsRouteContext) {
   if (!isSafeAgentCoreEnabled()) {
     return jsonNoStore({ error: "safe_core_disabled" }, { status: 404 });
   }
-  const core = getSafeCoreRuntime();
-  const auth = requireProtectedRequest(request, { store: core.store });
+  const store = getCoreStore();
+  const auth = requireProtectedRequest(request, { store });
   if (!auth.ok) return auth.response;
   const { runId } = await context.params;
-  const run = core.store.getRun(runId);
+  const run = store.getRun(runId);
   if (!run || run.sessionId !== auth.session.sessionId) {
     return jsonNoStore({ error: "run_not_found" }, { status: 404 });
   }
@@ -47,9 +48,9 @@ export async function GET(request: Request, context: EventsRouteContext) {
   const lastEventId = request.headers.get("Last-Event-ID")?.trim() || null;
   let afterSeq = 0;
   if (lastEventId) {
-    const sequence = core.store.sequenceForEvent(runId, lastEventId);
+    const sequence = store.sequenceForEvent(runId, lastEventId);
     if (sequence === null) {
-      const protocolError = core.store.appendEvent({
+      const protocolError = store.appendEvent({
         runId,
         type: "protocol.error",
         payload: { code: "invalid_last_event_id" },
@@ -61,7 +62,7 @@ export async function GET(request: Request, context: EventsRouteContext) {
 
   return streamResponse(
     streamStoredEvents({
-      store: core.store,
+      store,
       runId,
       afterSeq,
       signal: request.signal,

@@ -1,8 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { validateLoopbackRequest } from "@/core/request-trust";
+import {
+  validateInternalServiceRequest,
+  validateLoopbackRequest,
+  validateTailscaleServeRequest,
+} from "@/core/request-trust";
 
 export function proxy(request: NextRequest) {
-  if (!validateLoopbackRequest(request)) {
+  const internalBroker = request.nextUrl.pathname.startsWith(
+    "/api/internal/hermes/",
+  );
+  const trusted = internalBroker
+    ? validateLoopbackRequest(request) || validateInternalServiceRequest(request)
+    : validateLoopbackRequest(request) || validateTailscaleServeRequest(request);
+  if (!trusted) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return NextResponse.next();

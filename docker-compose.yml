@@ -1,0 +1,131 @@
+name: jarvis
+
+x-jarvis-common: &jarvis-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+    platforms: [linux/arm64, linux/amd64]
+  image: "${JARVIS_IMAGE:?Set JARVIS_IMAGE to a verified image@sha256 digest}"
+  profiles: [oci-a1-free, standard-4x8]
+  restart: unless-stopped
+  env_file: [.env]
+  volumes:
+    - /srv/jarvis/data:/var/lib/jarvis
+    - /srv/jarvis/workspaces:/workspaces
+  networks: [private]
+
+services:
+  hermes-config:
+    image: "${JARVIS_IMAGE:?Set JARVIS_IMAGE to a verified image@sha256 digest}"
+    profiles: [oci-a1-free, standard-4x8]
+    restart: "no"
+    command:
+      - node
+      - scripts/configure-hermes-broker.mjs
+      - /var/lib/hermes/config.yaml
+      - config/hermes/config.yaml
+    volumes:
+      - /srv/jarvis/hermes:/var/lib/hermes
+    networks: [private]
+
+  jarvis-web:
+    <<: *jarvis-common
+    environment:
+      JARVIS_ROLE: web
+      JARVIS_BROKER_ENABLED: "0"
+      JARVIS_DATA_DIR: /var/lib/jarvis
+      JARVIS_WORKSPACE_DIR: /workspaces
+      HERMES_GATEWAY_URL: ws://hermes:9119/api/ws
+      HERMES_GATEWAY_HTTP: http://hermes:9119
+      LOCAL_OPENAI_BASE_URL: http://omniroute:20128
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      hermes-config: { condition: service_completed_successfully }
+      hermes: { condition: service_healthy }
+      omniroute: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "${JARVIS_WEB_CPUS:-0.5}", memory: "${JARVIS_WEB_MEMORY:-1024M}" }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  jarvis-worker:
+    <<: *jarvis-common
+    environment:
+      JARVIS_ROLE: worker
+      JARVIS_BROKER_ENABLED: "1"
+      JARVIS_INTERNAL_HOSTS: jarvis-worker:3001
+      JARVIS_TELEGRAM_BOT_TOKEN: "${JARVIS_TELEGRAM_BOT_TOKEN:-}"
+      JARVIS_DATA_DIR: /var/lib/jarvis
+      HERMES_GATEWAY_URL: ws://hermes:9119/api/ws
+      HERMES_GATEWAY_HTTP: http://hermes:9119
+      LOCAL_OPENAI_BASE_URL: http://omniroute:20128
+      PORT: "3001"
+    expose: ["3001"]
+    depends_on:
+      hermes-config: { condition: service_completed_successfully }
+      omniroute: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "${JARVIS_WORKER_CPUS:-0.5}", memory: "${JARVIS_WORKER_MEMORY:-1024M}" }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/internal/hermes/v1/chat/completions',{method:'POST'}).then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  hermes:
+    image: "${HERMES_IMAGE:?Set HERMES_IMAGE to a verified image@sha256 digest}"
+    profiles: [oci-a1-free, standard-4x8]
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      HERMES_HOME: /var/lib/hermes
+      HERMES_UID: "1001"
+      HERMES_GID: "1001"
+      HERMES_BROKER_TOKEN: "${HERMES_BROKER_TOKEN:?Set HERMES_BROKER_TOKEN}"
+    expose: ["9119"]
+    volumes:
+      - /srv/jarvis/hermes:/var/lib/hermes
+      - /srv/jarvis/workspaces:/workspaces
+    networks: [private]
+    depends_on:
+      hermes-config: { condition: service_completed_successfully }
+      jarvis-worker: { condition: service_healthy }
+      omniroute: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "${HERMES_CPUS:-0.75}", memory: "${HERMES_MEMORY:-4608M}" }
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:9119/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  omniroute:
+    image: "${OMNIROUTE_IMAGE:?Set OMNIROUTE_IMAGE to a verified image@sha256 digest}"
+    profiles: [oci-a1-free, standard-4x8]
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATA_DIR: /app/data
+    expose: ["20128"]
+    volumes:
+      - /srv/jarvis/omniroute:/app/data
+    networks: [private]
+    deploy:
+      resources:
+        limits: { cpus: "${OMNIROUTE_CPUS:-0.5}", memory: "${OMNIROUTE_MEMORY:-1536M}" }
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1:20128/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+networks:
+  private:
+    # No public service ports; approved providers still need outbound egress.
+    internal: false

@@ -6,6 +6,7 @@ import {
 } from "./allowlist";
 import type { McpBrasilQueryInput, McpBrasilQueryOutput } from "./manifest";
 import { mcpBrasilQueryInputSchema } from "./manifest";
+import { assertNever } from "@/core/assert-never";
 
 export type McpBrasilRunResult =
   | { status: "ok"; output: McpBrasilQueryOutput }
@@ -67,7 +68,7 @@ export async function runMcpBrasilQuery(
       source = "IBGE — referência pública";
       break;
     default:
-      return { status: "denied", reason: "tool_not_implemented" };
+      return assertNever(input.tool);
   }
 
   return {

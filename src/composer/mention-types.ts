@@ -30,6 +30,14 @@ export type ComposerChip =
       relPath: string;
       label: string;
       summary: PathContextSummary;
+    }
+  | {
+      id: string;
+      kind: "image";
+      label: string;
+      path?: string;
+      contentBase64?: string;
+      filename?: string;
     };
 
 export interface ComposerDraft {

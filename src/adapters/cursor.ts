@@ -14,6 +14,7 @@ export class CursorTextAdapter implements TextAdapter {
     options?: { systemInstruction?: string },
   ): AsyncGenerator<string, TextResponse> {
     const apiKey = requireEnv("CURSOR_API_KEY");
+    // Intentional runtime import: avoid loading optional Cursor SDK before adapter use.
     const cursorSdk = await import("@cursor/sdk");
     const Agent = cursorSdk.Agent;
 

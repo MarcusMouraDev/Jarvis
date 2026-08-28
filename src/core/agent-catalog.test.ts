@@ -18,6 +18,23 @@ import {
 } from "./agent-catalog";
 import { resolveWorkspace } from "./workspace-policy";
 
+const existingRepoCatalog = `
+version: 1
+default_model: gemini
+models:
+  gemini: { provider: google, costs_extra: true, fallback: [codex-openai] }
+  codex-openai: { provider: openai, costs_extra: true, fallback: [] }
+agents:
+  Hermes:
+    model: gemini
+    workspace_mode: existing_repo
+    mutation_mode: controlled
+    tools: [code.context, terminal.read, terminal.run, file.patch]
+    memory_policy: manual
+    budget_usd: 2
+    timeout_ms: 120000
+`;
+
 const validCatalog = `
 version: 1
 default_model: gemini
@@ -33,30 +50,6 @@ agents:
     memory_policy: manual
     budget_usd: 2
     timeout_ms: 120000
-  Planner:
-    model: gemini
-    workspace_mode: optional_existing
-    mutation_mode: none
-    tools: [code.context]
-    memory_policy: off
-    budget_usd: 1
-    timeout_ms: 1
-  Developer:
-    model: gemini
-    workspace_mode: existing_repo
-    mutation_mode: controlled
-    tools: [code.context]
-    memory_policy: manual
-    budget_usd: 1
-    timeout_ms: 1
-  Builder:
-    model: gemini
-    workspace_mode: new_project
-    mutation_mode: controlled
-    tools: [code.context]
-    memory_policy: consent
-    budget_usd: 1
-    timeout_ms: 1
 `;
 
 const tempPaths: string[] = [];
@@ -85,17 +78,14 @@ describe("agent catalog", () => {
     expect(catalog.models.gemini.fallback).toEqual(["codex-openai"]);
     expect(catalog.models["codex-openai"].fallback).toEqual(["cursor-text"]);
     expect(catalog.models["cursor-text"].fallback).toEqual([]);
-    expect(Object.keys(catalog.agents)).toEqual([
-      "Hermes",
-      "Planner",
-      "Developer",
-      "Builder",
-    ]);
-    expect(getAgent(catalog, "Planner")).toMatchObject({
-      mutationMode: "none",
+    expect(Object.keys(catalog.agents)).toEqual(["Hermes"]);
+    expect(getAgent(catalog, "Hermes")).toMatchObject({
+      mutationMode: "controlled",
       tools: [
         "code.context",
         "terminal.read",
+        "terminal.run",
+        "file.patch",
         "omniroute.list_models",
         "omniroute.check_quota",
         "omniroute.compression_status",
@@ -129,7 +119,7 @@ describe("agent catalog", () => {
   });
 
   it("enforces the workspace mode selected by the agent", () => {
-    const catalog = loadAgentCatalogFromYaml(validCatalog);
+    const catalog = loadAgentCatalogFromYaml(existingRepoCatalog);
 
     expect(() =>
       resolveWorkspaceForAgent(catalog, "Hermes", { kind: "new", name: "app" }),
@@ -143,7 +133,10 @@ describe("agent catalog", () => {
     ],
     [
       "an inherited tool",
-      validCatalog.replace("tools: [code.context]", "tools: [constructor]"),
+      validCatalog.replace(
+        "tools: [code.context, terminal.read, terminal.run, file.patch]",
+        "tools: [constructor]",
+      ),
     ],
     [
       "an inherited fallback",
@@ -154,7 +147,7 @@ describe("agent catalog", () => {
   });
 
   it("does not return an inherited agent", () => {
-    const catalog = loadAgentCatalogFromYaml(validCatalog);
+    const catalog = loadAgentCatalogFromYaml(existingRepoCatalog);
     const inheritedCatalog = {
       ...catalog,
       agents: Object.create({ toString: catalog.agents.Hermes }),
@@ -177,7 +170,7 @@ describe("agent catalog", () => {
     mkdirSync(join(emptyGitDirectory, ".git"));
     mkdirSync(arbitraryGitFile);
     writeFileSync(join(arbitraryGitFile, ".git"), "not a worktree\n");
-    const catalog = loadAgentCatalogFromYaml(validCatalog);
+    const catalog = loadAgentCatalogFromYaml(existingRepoCatalog);
 
     const plainWorkspace = resolveWorkspace(
       { kind: "existing", path: plainDirectory },
@@ -197,20 +190,20 @@ describe("agent catalog", () => {
     );
 
     expect(() =>
-      assertResolvedWorkspaceForAgent(catalog, "Developer", plainWorkspace),
+      assertResolvedWorkspaceForAgent(catalog, "Hermes", plainWorkspace),
     ).toThrow();
     expect(
-      assertResolvedWorkspaceForAgent(catalog, "Developer", repositoryWorkspace),
-    ).toMatchObject({ id: "Developer" });
+      assertResolvedWorkspaceForAgent(catalog, "Hermes", repositoryWorkspace),
+    ).toMatchObject({ id: "Hermes" });
     expect(() =>
       assertResolvedWorkspaceForAgent(
         catalog,
-        "Developer",
+        "Hermes",
         emptyGitDirectoryWorkspace,
       ),
     ).toThrow();
     expect(() =>
-      assertResolvedWorkspaceForAgent(catalog, "Developer", arbitraryGitFileWorkspace),
+      assertResolvedWorkspaceForAgent(catalog, "Hermes", arbitraryGitFileWorkspace),
     ).toThrow();
   });
 
@@ -220,14 +213,14 @@ describe("agent catalog", () => {
     const projectsRoot = realpathSync(root);
     const repository = join(projectsRoot, "repository");
     execFileSync("git", ["init", "--quiet", repository]);
-    const catalog = loadAgentCatalogFromYaml(validCatalog);
+    const catalog = loadAgentCatalogFromYaml(existingRepoCatalog);
     const workspace = resolveWorkspace(
       { kind: "existing", path: repository },
       { projectsRoot },
     );
 
     expect(() =>
-      assertResolvedWorkspaceForAgent(catalog, "Developer", workspace, {
+      assertResolvedWorkspaceForAgent(catalog, "Hermes", workspace, {
         execFile: (() => {
           const error = new Error("git unavailable") as NodeJS.ErrnoException;
           error.code = "ENOENT";

@@ -12,6 +12,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const electronDir = join(root, "node_modules", "electron");
 const pathFile = join(electronDir, "path.txt");
 
+if (
+  process.env.JARVIS_SKIP_ELECTRON === "1" &&
+  process.env.JARVIS_FORCE_ELECTRON !== "1"
+) {
+  process.exit(0);
+}
+
 function trimPathTxt() {
   if (!existsSync(pathFile)) return;
   const rel = readFileSync(pathFile, "utf8").trim();

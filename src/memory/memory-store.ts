@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { configureSqliteConnection } from "@/core/sqlite-connection";
 
 const DB_DIR = path.join(process.cwd(), ".jarvis");
 const DB_PATH = path.join(DB_DIR, "memory.db");
@@ -52,7 +53,7 @@ export function getMemoryDb(): Database.Database {
       fs.mkdirSync(path.dirname(target), { recursive: true });
     }
     db = new Database(target);
-    db.pragma("journal_mode = WAL");
+    configureSqliteConnection(db);
     initSchema(db);
   }
   return db;

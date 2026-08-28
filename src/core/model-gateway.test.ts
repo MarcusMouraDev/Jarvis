@@ -35,27 +35,6 @@ agents:
     memory_policy: manual
     budget_usd: 0
     timeout_ms: 1000
-  Planner:
-    workspace_mode: optional_existing
-    mutation_mode: none
-    tools: [code.context]
-    memory_policy: off
-    budget_usd: 0
-    timeout_ms: 1000
-  Developer:
-    workspace_mode: existing_repo
-    mutation_mode: controlled
-    tools: [code.context]
-    memory_policy: manual
-    budget_usd: 0
-    timeout_ms: 1000
-  Builder:
-    workspace_mode: new_project
-    mutation_mode: controlled
-    tools: [code.context]
-    memory_policy: consent
-    budget_usd: 0
-    timeout_ms: 1000
 `);
 
   it("defaults the safe core to local without cloud fallback", () => {

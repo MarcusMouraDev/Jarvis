@@ -15,6 +15,7 @@ import {
   createSafeCoreRuntime,
   listSecureWorkspaceNames,
 } from "./safe-core-runtime";
+import { getCoreStore } from "./core-store-runtime";
 
 const originalDataDir = process.env.JARVIS_DATA_DIR;
 
@@ -51,6 +52,13 @@ describe("safe-core runtime", () => {
     );
     expect(Object.keys(localOnly)).toEqual(["local"]);
     expect(localOnly.local?.model).toBe("qwen-local");
+  });
+
+  it("exposes the existing CoreStore without materializing the full runtime", () => {
+    root = realpathSync(mkdtempSync(path.join(tmpdir(), "jarvis-store-runtime-")));
+    process.env.JARVIS_DATA_DIR = path.join(root, "data");
+
+    expect(getCoreStore()).toBe(openCoreStore());
   });
 
   it("prefers OmniRoute OpenAI-compatible local over Ollama when both are set", () => {

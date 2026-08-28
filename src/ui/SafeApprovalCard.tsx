@@ -1,19 +1,18 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import type { SafeApprovalView } from "@/core/safe-api-contract";
+import type { HermesApprovalChoice } from "@/integrations/hermes/approval-map";
+import {
+  asNonEmptyString as asString,
+  asRecord,
+} from "@/lib/value-guards";
+import { useDialogFocus } from "./use-dialog-focus";
 
 interface SafeApprovalCardProps {
   approval: SafeApprovalView;
   busy: boolean;
-  onDecision: (decision: "approved" | "denied") => void;
-}
-
-function formatJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
+  onDecision: (decision: "approved" | "denied", choice?: HermesApprovalChoice) => void;
 }
 
 export function SafeApprovalCard({
@@ -21,59 +20,91 @@ export function SafeApprovalCard({
   busy,
   onDecision,
 }: SafeApprovalCardProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const preview = asRecord(approval.preview);
+  const command =
+    asString(preview?.command) ??
+    asString(asRecord(approval.target)?.command) ??
+    "";
+  const gate = asString(preview?.gate) ?? approval.toolId.replace(/[_-]+/g, " ");
+  const risk = asString(preview?.risk);
+
+  const deny = useCallback(() => {
+    if (!busy) onDecision("denied", "deny");
+  }, [busy, onDecision]);
+
+  useDialogFocus(true, dialogRef, deny);
+
   return (
     <div
-      className="safe-approval-card elev-2 mt-2 w-full max-w-[65ch] rounded-lg bg-surface-1/95 p-3 text-left"
-      role="group"
-      aria-label="Aprovação de ferramenta"
-      data-testid="safe-approval-card"
+      className="confirm-z fixed inset-0 z-50 flex items-center justify-center bg-surface-0/80 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) deny();
+      }}
     >
-      <p className="text-xs font-medium text-accent-ask">Aprovação necessária</p>
-      <p className="mt-1 font-mono text-[11px] text-ink-1">{approval.toolId}</p>
-      <dl className="mt-2 grid gap-1 text-[11px] text-ink-2">
-        <div className="flex min-w-0 gap-2">
-          <dt className="shrink-0">alvo</dt>
-          <dd className="min-w-0 truncate font-mono text-ink-1">
-            {formatJson(approval.target)}
-          </dd>
+      <div
+        ref={dialogRef}
+        className="safe-approval-card elev-3 w-full max-w-md rounded-xl border border-surface-2 bg-surface-1 p-5 text-left"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="safe-approval-title"
+        data-testid="safe-approval-card"
+      >
+        <p id="safe-approval-title" className="text-sm font-medium text-accent-ask">
+          Aprovação necessária
+        </p>
+        <p className="mt-1 font-mono text-[11px] text-ink-1">{gate}</p>
+        {command ? (
+          <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface-0 p-2 font-mono text-[11px] text-ink-0">
+            {command}
+          </pre>
+        ) : null}
+        {risk ? (
+          <p className="mt-2 text-[11px] text-accent-ask">risco: {risk}</p>
+        ) : null}
+        <p className="mt-2 font-mono text-[10px] text-ink-2">expira {approval.expiresAt}</p>
+        <details className="mt-2 text-[11px] text-ink-2">
+          <summary>preview / efeito</summary>
+          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-ink-1">
+            {JSON.stringify({ preview: approval.preview, effect: approval.effect }, null, 2)}
+          </pre>
+        </details>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="btn-press min-h-11 rounded-md px-3 py-1.5 text-xs text-ink-2 hover:text-ink-0"
+            disabled={busy}
+            autoFocus
+            onClick={deny}
+          >
+            negar
+          </button>
+          <button
+            type="button"
+            className="btn-press min-h-11 rounded-md px-3 py-1.5 text-xs text-ink-1"
+            disabled={busy}
+            onClick={() => onDecision("approved", "once")}
+          >
+            uma vez
+          </button>
+          <button
+            type="button"
+            className="btn-press min-h-11 rounded-md px-3 py-1.5 text-xs text-ink-1"
+            disabled={busy}
+            onClick={() => onDecision("approved", "session")}
+          >
+            nesta sessão
+          </button>
+          <button
+            type="button"
+            className="btn-press min-h-11 rounded-md bg-accent-ask px-3 py-1.5 text-xs font-medium text-surface-0"
+            disabled={busy}
+            onClick={() => onDecision("approved", "always")}
+          >
+            sempre
+          </button>
         </div>
-        <div className="flex min-w-0 gap-2">
-          <dt className="shrink-0">efeito</dt>
-          <dd className="min-w-0 truncate font-mono text-ink-1">
-            {formatJson(approval.effect)}
-          </dd>
-        </div>
-        <div className="flex min-w-0 gap-2">
-          <dt className="shrink-0">expira</dt>
-          <dd className="font-mono text-ink-1">{approval.expiresAt}</dd>
-        </div>
-      </dl>
-      <details className="safe-approval-disclosure mt-2">
-        <summary className="cursor-pointer text-[11px] text-ink-1">
-          preview / diff
-        </summary>
-        <pre className="mt-2 overflow-x-auto rounded-md bg-surface-0 p-2 font-mono text-[11px] text-ink-0 whitespace-pre-wrap">
-          {formatJson(approval.preview)}
-        </pre>
-      </details>
-      <div className="mt-3 flex flex-wrap justify-end gap-2">
-        <button
-          type="button"
-          className="btn-press min-h-11 min-w-11 rounded-md px-3 py-1.5 text-xs text-ink-2 hover:text-ink-0"
-          disabled={busy}
-          onClick={() => onDecision("denied")}
-          autoFocus
-        >
-          Recusar
-        </button>
-        <button
-          type="button"
-          className="btn-press min-h-11 min-w-11 rounded-md bg-accent-ask px-3 py-1.5 text-xs font-medium text-surface-0"
-          disabled={busy}
-          onClick={() => onDecision("approved")}
-        >
-          Aprovar
-        </button>
       </div>
     </div>
   );

@@ -83,7 +83,10 @@ function resolveProjectsRoot(options: WorkspaceResolverOptions): {
     fail("projects root must be a real directory");
   }
 
-  return { supplied: resolve(configuredRoot), real: realpathSync(configuredRoot) };
+  return {
+    supplied: resolve(/* turbopackIgnore: true */ configuredRoot),
+    real: realpathSync(/* turbopackIgnore: true */ configuredRoot),
+  };
 }
 
 function assertRealExistingWorkspace(

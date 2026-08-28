@@ -135,9 +135,8 @@ describe("safe-core JSON routes", () => {
         body: JSON.stringify({ defaultAgentId: "Planner" }),
       }),
     );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ defaultAgentId: "Planner" });
-    expect(store.getSession("session-routes")?.defaultAgentId).toBe("Planner");
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(store.getSession("session-routes")?.defaultAgentId).toBe("Hermes");
   });
 
   it("gets and cancels a same-session run while hiding cross-session identifiers", async () => {

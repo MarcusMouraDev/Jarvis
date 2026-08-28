@@ -135,6 +135,73 @@ describe("safe-core-client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("coalesces parallel bootstraps into one request", async () => {
+    const releases: Array<(value: Response) => void> = [];
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = Promise.all([ensureSafeSession(), ensureSafeSession()]);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    for (const release of releases) {
+      release(
+        new Response(
+          JSON.stringify({
+            csrfToken: "csrf-shared",
+            defaultAgentId: "Hermes",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }
+    const [first, second] = await pending;
+    expect(first.csrfToken).toBe("csrf-shared");
+    expect(second.csrfToken).toBe("csrf-shared");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a protected fetch once after CSRF 401", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            csrfToken: "csrf-stale",
+            defaultAgentId: "Hermes",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            csrfToken: "csrf-fresh",
+            defaultAgentId: "Hermes",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await ensureSafeSession();
+    const response = await safeCoreFetch("/api/runs", { method: "POST", body: "{}" });
+    expect(response.ok).toBe(true);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/runs",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Jarvis-CSRF": "csrf-fresh" }),
+      }),
+    );
+  });
+
   it("streams run events with CSRF and Last-Event-ID headers", async () => {
     memory.set(
       CSRF_STORAGE_KEY,
@@ -160,7 +227,7 @@ describe("safe-core-client", () => {
     );
     expect(events.map((event) => event.eventId)).toEqual(["event-1", "event-2"]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/runs/run-1/events",
+      "/api/runs/run-1?stream=1",
       expect.objectContaining({
         headers: expect.objectContaining({
           "X-Jarvis-CSRF": "csrf-token-1",

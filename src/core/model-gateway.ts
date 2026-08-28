@@ -12,6 +12,7 @@ import {
 import { getTelemetryEvents } from "./telemetry";
 import type { AgentCatalog } from "./agent-catalog";
 import type { JsonValue } from "./core-store";
+import { stableJson } from "@/lib/stable-json";
 
 export interface SafeModelSelection {
   alias: string;
@@ -20,15 +21,6 @@ export interface SafeModelSelection {
   costsExtra: boolean;
   reason: "requested" | "local_default" | "fallback";
   cloudEgressDigest?: string;
-}
-
-function stableJson(value: JsonValue): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
-    .join(",")}}`;
 }
 
 export function createCloudEgressDigest(input: {

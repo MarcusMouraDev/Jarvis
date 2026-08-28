@@ -11,6 +11,12 @@ import type {
 } from "./safe-model-adapters";
 import { getSafeToolManifest } from "./safe-tool-manifests";
 import type { GatewayResult } from "./tool-gateway";
+import { stableJson } from "@/lib/stable-json";
+import {
+  compileJarvisSystemInstruction,
+  loadJarvisSoulPolicy,
+  type JarvisSoulPolicy,
+} from "./jarvis-soul";
 
 const MAX_STEPS = 8;
 
@@ -39,6 +45,7 @@ export interface SafeModelOrchestratorOptions {
   toolGateway: OrchestratorToolGateway;
   serverMaxTimeoutMs: number;
   serverMaxBudgetUsd: number;
+  soulPolicy?: JarvisSoulPolicy;
 }
 
 export interface ExecuteSafeRunInput {
@@ -82,6 +89,7 @@ interface BoundRunInput {
   approvedCloudEgressDigest: string | null;
   maxCostUsd: number | null;
   timeoutMs: number | null;
+  soulPolicyDigest: string;
 }
 
 interface PendingToolCall {
@@ -145,20 +153,6 @@ function asJsonValue(value: unknown): JsonValue {
   throw new TypeError("orchestrator_value_not_json");
 }
 
-function stableValue(value: JsonValue): JsonValue {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(stableValue);
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, stableValue(value[key])]),
-  );
-}
-
-function stableJson(value: JsonValue): string {
-  return JSON.stringify(stableValue(value));
-}
-
 function digest(value: JsonValue): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
@@ -168,11 +162,7 @@ function toolCallSignature(toolId: string, input: JsonValue): string {
 }
 
 function modelContent(prompt: string, context: JsonValue): string {
-  const language =
-    "Responda sempre em português do Brasil, de forma clara e objetiva, salvo pedido contrário do usuário.\n\n";
-  const body =
-    context === null ? prompt : `${prompt}\n\nContext:\n${stableJson(context)}`;
-  return `${language}${body}`;
+  return context === null ? prompt : `${prompt}\n\nContext:\n${stableJson(context)}`;
 }
 
 function eventPayload(event: SafeModelEvent): JsonValue {
@@ -194,6 +184,7 @@ function parseBoundInput(
   event: CoreEvent,
   prompt: string,
   context: JsonValue,
+  soulPolicyDigest: string,
 ): BoundRunInput {
   const payload = asRecord(event.payload);
   if (!payload || typeof payload.inputDigest !== "string") {
@@ -201,6 +192,9 @@ function parseBoundInput(
   }
   if (digest({ prompt, context }) !== payload.inputDigest) {
     throw new Error("run_input_binding_mismatch");
+  }
+  if (typeof payload.soulPolicyDigest === "string" && payload.soulPolicyDigest !== soulPolicyDigest) {
+    throw new Error("soul_policy_mismatch");
   }
   return {
     prompt,
@@ -213,6 +207,8 @@ function parseBoundInput(
         : null,
     maxCostUsd: typeof payload.maxCostUsd === "number" ? payload.maxCostUsd : null,
     timeoutMs: typeof payload.timeoutMs === "number" ? payload.timeoutMs : null,
+    soulPolicyDigest:
+      typeof payload.soulPolicyDigest === "string" ? payload.soulPolicyDigest : soulPolicyDigest,
   };
 }
 
@@ -357,6 +353,7 @@ export class SafeModelOrchestrator {
       approvedCloudEgressDigest: input.approvedCloudEgressDigest ?? null,
       maxCostUsd: input.maxCostUsd ?? null,
       timeoutMs: input.timeoutMs ?? null,
+      soulPolicyDigest: this.soulPolicy().digest,
     };
     return this.withActiveRun(run, agent, bound.timeoutMs, async (signal) => {
       try {
@@ -373,6 +370,7 @@ export class SafeModelOrchestrator {
           approvedCloudEgressDigest: bound.approvedCloudEgressDigest,
           maxCostUsd: bound.maxCostUsd,
           timeoutMs: bound.timeoutMs,
+          soulPolicyDigest: bound.soulPolicyDigest,
         });
         return await this.executeLoop({
           run: { ...run, status: "running" },
@@ -397,7 +395,12 @@ export class SafeModelOrchestrator {
     const events = this.options.store.replayEvents(run.runId);
     const boundEvent = events.find((event) => event.type === "run.input_bound");
     if (!boundEvent) throw new Error("run_input_not_bound");
-    const bound = parseBoundInput(boundEvent, input.prompt, input.context);
+    const bound = parseBoundInput(
+      boundEvent,
+      input.prompt,
+      input.context,
+      this.soulPolicy().digest,
+    );
     const pending = pendingToolCall(events, input.invocationId);
 
     return this.withActiveRun(run, agent, bound.timeoutMs, async (signal) => {
@@ -561,6 +564,7 @@ export class SafeModelOrchestrator {
             requestId: randomUUID(),
             messages: state.messages,
             tools: requestTools,
+            systemInstruction: compileJarvisSystemInstruction(this.soulPolicy()),
           },
           state.signal,
         )) {
@@ -710,6 +714,10 @@ export class SafeModelOrchestrator {
       approvedCloudEgressDigest: state.bound.approvedCloudEgressDigest ?? undefined,
     });
     return { selected, adapter };
+  }
+
+  private soulPolicy(): JarvisSoulPolicy {
+    return this.options.soulPolicy ?? loadJarvisSoulPolicy();
   }
 
   private nextFallback(

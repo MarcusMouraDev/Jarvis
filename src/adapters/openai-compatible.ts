@@ -6,6 +6,7 @@ import {
   localOpenAiBaseUrl,
   localOpenAiModel,
 } from "@/lib/env";
+import { normalizeBaseUrl } from "@/lib/normalize-base-url";
 
 interface OpenAIStreamChunk {
   choices?: Array<{
@@ -24,10 +25,6 @@ export interface OpenAICompatibleHealth {
   latencyMs?: number;
   error?: string;
   modelCount?: number;
-}
-
-function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "");
 }
 
 export function isOpenAICompatibleConfigured(): boolean {

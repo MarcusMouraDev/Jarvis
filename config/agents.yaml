@@ -34,43 +34,4 @@ agents:
       ]
     memory_policy: manual
     budget_usd: 0
-    timeout_ms: 120000
-  Planner:
-    workspace_mode: optional_existing
-    mutation_mode: none
-    tools:
-      [
-        code.context,
-        terminal.read,
-        omniroute.list_models,
-        omniroute.check_quota,
-        omniroute.compression_status,
-        omniroute.usage_report,
-      ]
-    memory_policy: off
-    budget_usd: 0
-    timeout_ms: 90000
-  Developer:
-    workspace_mode: existing_repo
-    mutation_mode: controlled
-    tools:
-      [
-        code.context,
-        terminal.read,
-        terminal.run,
-        file.patch,
-        omniroute.list_models,
-        omniroute.check_quota,
-        omniroute.compression_status,
-        omniroute.usage_report,
-      ]
-    memory_policy: manual
-    budget_usd: 0
-    timeout_ms: 180000
-  Builder:
-    workspace_mode: new_project
-    mutation_mode: controlled
-    tools: [terminal.read, terminal.run, file.patch, project.create]
-    memory_policy: consent
-    budget_usd: 0
-    timeout_ms: 180000
+    timeout_ms: 300000

@@ -17,6 +17,8 @@ import {
   MUTATING_ACTIONS,
   SENSITIVE_PATTERNS,
 } from "./types";
+import { assertNever } from "@/core/assert-never";
+import type { BrowserType } from "playwright";
 
 export type BrowserRunResult =
   | { status: "ok"; output: BrowserRunOutput }
@@ -85,8 +87,9 @@ async function runPlaywrightBrowser(
   const plan = buildPlan(input);
   const results: BrowserRunOutput["results"] = [];
 
-  let chromium: typeof import("playwright").chromium;
+  let chromium: BrowserType;
   try {
+    // Intentional runtime import: browser automation is an optional heavyweight capability.
     ({ chromium } = await import("playwright"));
   } catch {
     throw new Error("playwright_not_installed");
@@ -138,6 +141,8 @@ async function runPlaywrightBrowser(
             });
             break;
           }
+          default:
+            assertNever(step);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "step_failed";

@@ -1,6 +1,6 @@
 import { jsonNoStore } from "@/core/safe-route-response";
 import { requireProtectedRequest, validateLoopbackRequest } from "@/core/session-security";
-import { getSafeCoreRuntime } from "@/core/safe-core-runtime";
+import { getCoreStore } from "@/core/core-store-runtime";
 import { isSafeAgentCoreEnabled } from "@/integrations/flags";
 import { OmnirouteMcpClient, resolveOmnirouteBaseUrl } from "@/integrations/omniroute-mcp/client";
 import { fetchOmnirouteUsageReport } from "@/integrations/omniroute-mcp/usage-report";
@@ -13,8 +13,7 @@ function readEnv(name: string): string | undefined {
 
 export async function GET(request: Request) {
   if (isSafeAgentCoreEnabled()) {
-    const core = getSafeCoreRuntime();
-    const auth = requireProtectedRequest(request, { store: core.store });
+    const auth = requireProtectedRequest(request, { store: getCoreStore() });
     if (!auth.ok) return auth.response;
   } else if (!validateLoopbackRequest(request)) {
     return jsonNoStore({ error: "forbidden" }, { status: 403 });

@@ -75,15 +75,10 @@ describe("SafeCoreService", () => {
   it("updates the default agent and returns path-free catalog/workspace summaries", () => {
     const core = service({ workspaceNames: ["jarvis", "client-secret"] });
 
-    expect(core.updateDefaultAgent(session, { defaultAgentId: "Planner" })).toMatchObject({
-      defaultAgentId: "Planner",
+    expect(core.updateDefaultAgent(session, { defaultAgentId: "Hermes" })).toMatchObject({
+      defaultAgentId: "Hermes",
     });
-    expect(core.listAgents().map((agent) => agent.id)).toEqual([
-      "Hermes",
-      "Planner",
-      "Developer",
-      "Builder",
-    ]);
+    expect(core.listAgents().map((agent) => agent.id)).toEqual(["Hermes"]);
     const serialized = JSON.stringify(core.listWorkspaces(session));
     expect(serialized).toContain("jarvis");
     expect(serialized).not.toContain(path.dirname(process.cwd()));

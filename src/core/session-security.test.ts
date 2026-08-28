@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeCoreStore, openCoreStore, type CoreStore } from "./core-store";
 import {
   requireProtectedRequest,
+  validateInternalServiceRequest,
   validateLoopbackRequest,
+  validateTailscaleServeRequest,
 } from "./session-security";
 
 const originalDataDir = process.env.JARVIS_DATA_DIR;
@@ -51,6 +53,71 @@ describe("loopback request trust boundary", () => {
     expect(
       validateLoopbackRequest(
         request({ host, ...(origin ? { origin } : {}) }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("internal service request trust boundary", () => {
+  it("accepts only an explicitly configured Docker service host without an Origin", () => {
+    expect(
+      validateInternalServiceRequest(
+        request({ host: "jarvis-worker:3001" }),
+        "jarvis-worker:3001",
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["jarvis-worker:3001", "http://jarvis-worker:3001"],
+    ["jarvis-worker:3000", undefined],
+    ["jarvis-worker.evil:3001", undefined],
+    ["jarvis-worker:3001/path", undefined],
+  ])("rejects untrusted internal host/origin %s %s", (host, origin) => {
+    expect(
+      validateInternalServiceRequest(
+        request({ host, ...(origin ? { origin } : {}) }),
+        "jarvis-worker:3001",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("Tailscale Serve trust boundary", () => {
+  const options = {
+    enabled: "1",
+    hosts: "jarvis.example-tailnet.ts.net",
+    logins: "marcus@example.com",
+  };
+
+  it("accepts an allowlisted Serve identity on the configured HTTPS host", () => {
+    expect(
+      validateTailscaleServeRequest(
+        request({
+          host: "jarvis.example-tailnet.ts.net",
+          origin: "https://jarvis.example-tailnet.ts.net",
+          "tailscale-user-login": "marcus@example.com",
+        }),
+        options,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    [{ ...options, enabled: "0" }, "marcus@example.com", "https://jarvis.example-tailnet.ts.net"],
+    [{ ...options, hosts: "other.example-tailnet.ts.net" }, "marcus@example.com", "https://jarvis.example-tailnet.ts.net"],
+    [options, "mallory@example.com", "https://jarvis.example-tailnet.ts.net"],
+    [options, "", "https://jarvis.example-tailnet.ts.net"],
+    [options, "marcus@example.com", "http://jarvis.example-tailnet.ts.net"],
+  ])("rejects disabled, spoofed, tagged or non-HTTPS Serve traffic", (config, login, origin) => {
+    expect(
+      validateTailscaleServeRequest(
+        request({
+          host: "jarvis.example-tailnet.ts.net",
+          origin,
+          ...(login ? { "tailscale-user-login": login } : {}),
+        }),
+        config,
       ),
     ).toBe(false);
   });
@@ -142,5 +209,43 @@ describe("protected request helper", () => {
     );
 
     expect(result).toMatchObject({ ok: false, response: { status: 403 } });
+  });
+
+  it("invalidates an existing session immediately when its device is revoked", () => {
+    store.createDevice({
+      deviceId: "device-1",
+      identityLogin: "marcus@example.com",
+      label: "iPhone",
+      kind: "pwa",
+      createdAt: "2026-08-08T10:00:00.000Z",
+    });
+    store.createSafeSession({
+      sessionId: "device-session",
+      csrfHash: createHash("sha256").update("device-csrf").digest("hex"),
+      defaultAgentId: "Hermes",
+      expiresAt: "2026-08-09T10:00:00.000Z",
+      createdAt: "2026-08-08T10:00:00.000Z",
+      lastSeenAt: "2026-08-08T10:00:00.000Z",
+      deviceId: "device-1",
+      identityLogin: "marcus@example.com",
+    });
+    const deviceRequest = request({
+      cookie: "jarvis_session=device-session",
+      "x-jarvis-csrf": "device-csrf",
+    });
+
+    expect(
+      requireProtectedRequest(deviceRequest, {
+        store,
+        now: new Date("2026-08-08T11:00:00.000Z"),
+      }).ok,
+    ).toBe(true);
+    store.revokeDevice("device-1", "2026-08-08T11:01:00.000Z");
+    expect(
+      requireProtectedRequest(deviceRequest, {
+        store,
+        now: new Date("2026-08-08T11:02:00.000Z"),
+      }),
+    ).toMatchObject({ ok: false, response: { status: 401 } });
   });
 });

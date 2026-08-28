@@ -1,0 +1,8 @@
+---
+description: Guidelines for using Mobbin design reference search
+alwaysApply: true
+---
+
+<!-- Imported from /Users/marcuspaulo/.cursor/plugins/cache/cursor-public/mobbin/d24b602b051fbae7e030e88a78fe099ee69c6741/rules/mobbin-usage.mdc -->
+
+Use the Mobbin MCP tools when the user asks about UI/UX patterns, design references, or wants to see how real apps implement specific flows (onboarding, checkout, settings, etc.). Mobbin searches 621,500+ real production app screens.

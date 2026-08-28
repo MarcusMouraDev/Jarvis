@@ -224,9 +224,35 @@ export function Composer({
     }
   };
 
+  const addImageFiles = (files: FileList | File[]) => {
+    const images = [...files].filter((file) => file.type.startsWith("image/"));
+    if (images.length === 0 || !onChipsChange) return;
+    for (const file of images.slice(0, 4)) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result ?? "");
+        const contentBase64 = dataUrl.includes(",")
+          ? dataUrl.slice(dataUrl.indexOf(",") + 1)
+          : "";
+        if (!contentBase64) return;
+        onChipsChange([
+          ...chips,
+          {
+            id: `image:${file.name}:${file.size}:${file.lastModified}`,
+            kind: "image",
+            label: file.name,
+            contentBase64,
+            filename: file.name,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <form
-      className="composer-dock chrome-z shrink-0 border-t border-surface-2/80 bg-surface-1/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[var(--shadow-dock)] backdrop-blur-md sm:px-4"
+      className="composer-dock"
       onSubmit={(e) => {
         e.preventDefault();
         if (open) {
@@ -234,6 +260,13 @@ export function Composer({
           return;
         }
         onSubmit();
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        addImageFiles(event.dataTransfer.files);
       }}
     >
       <div className="relative mx-auto max-w-3xl">
@@ -261,11 +294,11 @@ export function Composer({
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="composer-console">
           <input
             ref={inputRef}
             id="jarvis-composer"
-            className="min-w-0 flex-1 rounded-lg border border-surface-2 bg-surface-0 px-3 py-2.5 text-sm text-ink-0 outline-none placeholder:text-ink-2/70 focus-visible:border-[color-mix(in_oklab,var(--focus-ring)_55%,var(--color-border))] focus-visible:ring-1 focus-visible:ring-[color-mix(in_oklab,var(--focus-ring)_40%,transparent)]"
+            className="composer-field"
             value={value}
             disabled={disabled}
             role="combobox"
@@ -287,6 +320,12 @@ export function Composer({
               setCursor(e.currentTarget.selectionStart ?? value.length)
             }
             onKeyDown={(e) => {
+              if (e.key === "Escape" && !open && busy && onCancel) {
+                e.preventDefault();
+                e.stopPropagation();
+                onCancel();
+                return;
+              }
               if (!open) return;
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -299,7 +338,15 @@ export function Composer({
                 void selectSuggestion();
               } else if (e.key === "Escape") {
                 e.preventDefault();
+                e.stopPropagation();
                 setSuggestions([]);
+              }
+            }}
+            onPaste={(event) => {
+              const files = event.clipboardData?.files;
+              if (files && files.length > 0) {
+                event.preventDefault();
+                addImageFiles(files);
               }
             }}
             placeholder="@omniroute  @gemini  @cursor-text  /skill  #Documents/… #Projetos/…"
@@ -311,24 +358,25 @@ export function Composer({
               type="button"
               onClick={onCancel}
               aria-label="Cancelar resposta"
-              className="btn-press min-h-11 min-w-11 shrink-0 rounded-lg border border-[var(--state-danger)] px-3 py-2.5 text-sm font-medium whitespace-nowrap text-[var(--state-danger)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+              className="composer-send composer-send--stop"
             >
               Parar
             </button>
           ) : (
             <button
               type="submit"
-              disabled={disabled || !value.trim()}
-              className="btn-press min-h-11 min-w-11 shrink-0 rounded-lg bg-accent-listen px-4 py-2.5 text-sm font-medium whitespace-nowrap text-surface-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-listen disabled:opacity-40"
+              disabled={
+                disabled ||
+                (!value.trim() &&
+                  !chips.some((chip) => chip.kind === "image" || chip.kind === "path"))
+              }
+              className="composer-send"
             >
               Enviar
             </button>
           )}
         </div>
       </div>
-      <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] tracking-wide text-ink-2/80 sm:text-[11px]">
-        {busy ? "recebendo · Esc cancela" : "⌘K · hist ^H · voz ^V · @ / # · cancelar Esc"}
-      </p>
     </form>
   );
 }

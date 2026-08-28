@@ -108,6 +108,8 @@ OMNI_OWNED=${OMNI_OWNED:-0}
 JARVIS_OWNED=${JARVIS_OWNED:-0}
 OMNI_PID=${OMNI_PID:-}
 JARVIS_PID=${JARVIS_PID:-}
+HERMES_PID=${HERMES_PID:-}
+HERMES_OWNED=${HERMES_OWNED:-0}
 EOF
 }
 
@@ -123,11 +125,52 @@ load_state() {
 }
 
 status_json() {
-  local omni="down" jarvis="down"
+  local omni="down" jarvis="down" hermes="down"
   port_up 20128 && omni="up"
   port_up 3000 && jarvis="up"
-  printf '{"omni":"%s","jarvis":"%s"}\n' "$omni" "$jarvis"
+  port_up 9119 && hermes="up"
+  printf '{"omni":"%s","jarvis":"%s","hermes":"%s"}\n' "$omni" "$jarvis" "$hermes"
 }
+
+hermes_token() {
+  local token_file="$LOG_DIR/hermes.session-token"
+  if [[ ! -s "$token_file" ]]; then
+    openssl rand -hex 32 >"$token_file"
+  fi
+  cat "$token_file"
+}
+
+omniroute_loopback_key() {
+  python3 - "$JARVIS/.env.local" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(0)
+for line in path.read_text().splitlines():
+    if line.startswith("LOCAL_OPENAI_API_KEY=") or line.startswith("OMNIROUTE_API_KEY="):
+        value = line.split("=", 1)[1].strip().strip('"')
+        if value:
+            print(value, end="")
+            break
+PY
+}
+
+hermes_env() {
+  local bin="${HERMES_BIN:-$HOME/.hermes/venvs/hermes-313/bin/hermes}"
+  local home="${HERMES_HOME:-$HOME/.hermes/profiles/jarvis}"
+  local cwd="${HERMES_DEFAULT_CWD:-$HOME/Projetos}"
+  local token key
+  token="$(hermes_token)"
+  key="$(omniroute_loopback_key)"
+  echo "HERMES_HOME=$home HERMES_BIN=$bin HERMES_DEFAULT_CWD=$cwd HERMES_DASHBOARD_SESSION_TOKEN=$token HERMES_GATEWAY_TOKEN=$token HERMES_GATEWAY_URL=ws://127.0.0.1:9119/api/ws HERMES_GATEWAY_HTTP=http://127.0.0.1:9119 HERMES_TUI_PROVIDER=custom LOCAL_OPENAI_API_KEY=$key CUSTOM_API_KEY=$key OMNIROUTE_API_KEY=$key OPENAI_API_KEY=$key CUSTOM_BASE_URL=http://127.0.0.1:20128/v1 OPENAI_BASE_URL=http://127.0.0.1:20128/v1"
+}
+
+hermes_cmd() {
+  local bin="${HERMES_BIN:-$HOME/.hermes/venvs/hermes-313/bin/hermes}"
+  echo "$(hermes_env) $bin serve --host 127.0.0.1 --port 9119"
+}
+
 
 do_start() {
   need node
@@ -144,21 +187,32 @@ do_start() {
   if port_up 20128; then
     echo "✓ OmniRoute já ativo :20128"
   else
-    start_bg "OmniRoute" "$OMNI" "$(omni_cmd)" "$LOG_DIR/omniroute.log" "$LOG_DIR/omniroute.log.pid"
+    start_bg "OmniRoute" "$OMNI" "OMNIROUTE_API_KEY=$(omniroute_loopback_key) ROUTER_API_KEY=$(omniroute_loopback_key) $(omni_cmd)" "$LOG_DIR/omniroute.log" "$LOG_DIR/omniroute.log.pid"
     OMNI_PID="$(cat "$LOG_DIR/omniroute.log.pid")"
     OMNI_OWNED=1
     wait_omni=1
   fi
 
+  local wait_hermes=0
+  if port_up 9119; then
+    echo "✓ Hermes já ativo :9119"
+  else
+    start_bg "Hermes" "${HERMES_HOME:-$HOME/.hermes/profiles/jarvis}" "$(hermes_cmd)" "$LOG_DIR/hermes.log" "$LOG_DIR/hermes.log.pid"
+    HERMES_PID="$(cat "$LOG_DIR/hermes.log.pid")"
+    HERMES_OWNED=1
+    wait_hermes=1
+  fi
+
   if port_up 3000; then
     echo "✓ Jarvis já ativo :3000"
   else
-    local jcmd
+    local jcmd henv
     jcmd="$(jarvis_cmd)"
+    henv="$(hermes_env)"
     if [[ "${JARVIS_ELECTRON:-}" == "1" ]]; then
-      start_bg "Jarvis" "$JARVIS" "JARVIS_ELECTRON=1 JARVIS_OMNIROUTE_MCP=1 $jcmd" "$LOG_DIR/jarvis.log" "$LOG_DIR/jarvis.log.pid"
+      start_bg "Jarvis" "$JARVIS" "$henv JARVIS_ELECTRON=1 JARVIS_OMNIROUTE_MCP=1 $jcmd" "$LOG_DIR/jarvis.log" "$LOG_DIR/jarvis.log.pid"
     else
-      start_bg "Jarvis" "$JARVIS" "$jcmd" "$LOG_DIR/jarvis.log" "$LOG_DIR/jarvis.log.pid"
+      start_bg "Jarvis" "$JARVIS" "$henv $jcmd" "$LOG_DIR/jarvis.log" "$LOG_DIR/jarvis.log.pid"
     fi
     JARVIS_PID="$(cat "$LOG_DIR/jarvis.log.pid")"
     JARVIS_OWNED=1
@@ -168,16 +222,13 @@ do_start() {
   write_state
 
   local fail=0
-  if [[ "$wait_omni" == "1" && "$wait_jarvis" == "1" ]]; then
-    wait_port 20128 "OmniRoute" 90 &
-    local p1=$!
-    wait_port 3000 "Jarvis" 90 &
-    local p2=$!
-    wait "$p1" || fail=1
-    wait "$p2" || fail=1
-  elif [[ "$wait_omni" == "1" ]]; then
+  if [[ "$wait_omni" == "1" ]]; then
     wait_port 20128 "OmniRoute" 90 || fail=1
-  elif [[ "$wait_jarvis" == "1" ]]; then
+  fi
+  if [[ "$wait_hermes" == "1" ]]; then
+    wait_port 9119 "Hermes" 90 || fail=1
+  fi
+  if [[ "$wait_jarvis" == "1" ]]; then
     wait_port 3000 "Jarvis" 90 || fail=1
   fi
 
@@ -197,7 +248,11 @@ do_stop() {
     echo "→ parando Jarvis pid $JARVIS_PID"
     kill_tree_hard "$JARVIS_PID"
   fi
-  rm -f "$STATE_FILE" "$LOG_DIR/omniroute.log.pid" "$LOG_DIR/jarvis.log.pid"
+  if [[ "${HERMES_OWNED:-0}" == "1" && -n "${HERMES_PID:-}" ]]; then
+    echo "→ parando Hermes pid $HERMES_PID"
+    kill_tree_hard "$HERMES_PID"
+  fi
+  rm -f "$STATE_FILE" "$LOG_DIR/omniroute.log.pid" "$LOG_DIR/jarvis.log.pid" "$LOG_DIR/hermes.log.pid"
 }
 
 case "$ACTION" in

@@ -1,0 +1,23 @@
+{
+  "revision": "hermes-2026-08-25",
+  "capabilities": [
+    "sessions",
+    "attachments",
+    "approvals",
+    "subagents",
+    "clarifications",
+    "task_graph",
+    "cron",
+    "messaging",
+    "memory",
+    "voice",
+    "computer_use",
+    "plugins",
+    "skills",
+    "files",
+    "terminal",
+    "git",
+    "profiles",
+    "diagnostics"
+  ]
+}

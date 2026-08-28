@@ -1,4 +1,5 @@
 import { isLoopbackBaseUrl } from "./allowlist";
+import { normalizeBaseUrl } from "@/lib/normalize-base-url";
 
 export interface OmnirouteMcpClientOptions {
   baseUrl?: string;
@@ -20,10 +21,6 @@ export class OmnirouteMcpClientError extends Error {
     super(message);
     this.name = "OmnirouteMcpClientError";
   }
-}
-
-function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "");
 }
 
 export function resolveOmnirouteBaseUrl(

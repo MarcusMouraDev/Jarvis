@@ -1,4 +1,5 @@
 import type { PrivacyClass } from "./types";
+import { assertNever } from "./assert-never";
 
 export interface RoutingCandidate {
   alias: string;
@@ -48,8 +49,9 @@ function privacyScore(candidate: RoutingCandidate): number {
     case "internal":
       return isLocal ? 80 : 60;
     case "public":
-    default:
       return isLocal ? 50 : 70;
+    default:
+      return assertNever(candidate.privacyClass);
   }
 }
 

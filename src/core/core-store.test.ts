@@ -51,6 +51,7 @@ describe("core-store", () => {
         .map((row) => (row as { name: string }).name),
     ).toEqual([
       "approvals",
+      "devices",
       "events",
       "legacy_imports",
       "messages",
@@ -65,7 +66,7 @@ describe("core-store", () => {
         .prepare("SELECT version FROM schema_migrations ORDER BY version")
         .all()
         .map((row) => (row as { version: number }).version),
-    ).toEqual([1, 2, 3, 4]);
+    ).toEqual([1, 2, 3, 4, 5]);
     expect(
       database
         .prepare("PRAGMA table_info(sessions)")
@@ -78,6 +79,8 @@ describe("core-store", () => {
       "default_agent_id",
       "expires_at",
       "last_seen_at",
+      "device_id",
+      "identity_login",
     ]);
   });
 
@@ -99,6 +102,8 @@ describe("core-store", () => {
       expiresAt: "2026-08-09T10:00:00.000Z",
       createdAt: "2026-08-08T10:00:00.000Z",
       lastSeenAt: "2026-08-08T10:00:00.000Z",
+      deviceId: null,
+      identityLogin: null,
     });
 
     store.updateSessionLastSeen("opaque-session", "2026-08-08T11:00:00.000Z");

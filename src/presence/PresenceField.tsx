@@ -5,6 +5,7 @@ import type { AgentState } from "@/core/types";
 import { PresenceFallback } from "./PresenceFallback";
 
 const PresenceCanvas = dynamic(
+  // Intentional lazy import: keep WebGL bundle out of non-WebGL clients.
   () => import("./PresenceCanvas").then((m) => m.PresenceCanvas),
   { ssr: false, loading: () => <PresenceFallback state="idle" animate /> },
 );

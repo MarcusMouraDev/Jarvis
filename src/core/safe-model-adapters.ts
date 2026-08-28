@@ -1,4 +1,5 @@
 import type { JsonValue } from "./core-store";
+import { normalizeBaseUrl } from "@/lib/normalize-base-url";
 
 export type SafeModelProvider = "google" | "openai" | "cursor" | "local";
 export type RetryClassification =
@@ -65,6 +66,8 @@ export interface SafeModelRequest {
   requestId: string;
   messages: SafeModelMessage[];
   tools: SafeModelToolDefinition[];
+  /** Provider-native system policy. Never fold into user messages or tool payloads. */
+  systemInstruction?: string;
 }
 
 export interface TransportRequest {
@@ -316,6 +319,9 @@ export class GeminiSafeAdapter extends HttpSafeAdapter {
       credential: { env: "GEMINI_API_KEY", header: "x-goog-api-key" },
       body: {
         contents: geminiContents(input.messages, input.tools),
+        ...(input.systemInstruction
+          ? { systemInstruction: { parts: [{ text: input.systemInstruction }] } }
+          : {}),
         ...(input.tools.length
           ? {
               tools: [
@@ -422,6 +428,7 @@ export class CodexOpenAIAdapter extends HttpSafeAdapter {
       credential: { env: "OPENAI_API_KEY", header: "Authorization", prefix: "Bearer " },
       body: {
         model: this.model,
+        ...(input.systemInstruction ? { instructions: input.systemInstruction } : {}),
         input: openAiInput(input.messages, input.tools),
         stream: true,
         tools: input.tools.map((tool) => ({
@@ -534,10 +541,6 @@ function openAiChatMessages(messages: SafeModelMessage[], tools: SafeModelToolDe
   });
 }
 
-function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "");
-}
-
 /**
  * OmniRoute / local OpenAI-compatible gateway — Safe Core alias `local`.
  * Prefers LOCAL_OPENAI_* over Ollama when configured.
@@ -576,7 +579,12 @@ export class LocalOpenAICompatibleAdapter extends HttpSafeAdapter {
       headers,
       body: {
         model: this.model,
-        messages: openAiChatMessages(input.messages, input.tools),
+        messages: [
+          ...(input.systemInstruction
+            ? [{ role: "system", content: input.systemInstruction }]
+            : []),
+          ...openAiChatMessages(input.messages, input.tools),
+        ],
         stream: true,
         stream_options: { include_usage: true },
         ...(input.tools.length
@@ -703,7 +711,12 @@ export class LocalOllamaAdapter extends HttpSafeAdapter {
       protocol: "ndjson",
       body: {
         model: this.model,
-        messages: ollamaMessages(input.messages, input.tools),
+        messages: [
+          ...(input.systemInstruction
+            ? [{ role: "system", content: input.systemInstruction }]
+            : []),
+          ...ollamaMessages(input.messages, input.tools),
+        ],
         stream: true,
         ...(input.tools.length
           ? {
@@ -767,7 +780,8 @@ export class LocalOllamaAdapter extends HttpSafeAdapter {
   }
 }
 
-function cursorPrompt(messages: SafeModelMessage[]): string {
+function cursorPrompt(messages: SafeModelMessage[], systemInstruction?: string): string {
+  const system = systemInstruction ? `${systemInstruction}\n\n---\n\n` : "";
   return messages
     .map((message) => {
       if (message.role === "user") return message.content;
@@ -776,11 +790,13 @@ function cursorPrompt(messages: SafeModelMessage[]): string {
       }
       return `Tool result ${message.toolId}: ${JSON.stringify(message.output)}`;
     })
-    .join("\n\n");
+    .join("\n\n")
+    .replace(/^/, system);
 }
 
 const defaultCursorRuntime: CursorTextRuntime = {
   async *stream(input) {
+    // Intentional runtime import: Cursor SDK is optional and contains platform-native assets.
     const { Agent } = await import("@cursor/sdk");
     const agent = await Agent.create({
       apiKey: requiredEnv(processEnv, "CURSOR_API_KEY"),
@@ -821,7 +837,7 @@ export class CursorTextSafeAdapter implements SafeModelAdapter {
     try {
       for await (const raw of this.runtime.stream({
         model: this.model,
-        prompt: cursorPrompt(input.messages),
+        prompt: cursorPrompt(input.messages, input.systemInstruction),
         tools: [],
         signal,
       })) {

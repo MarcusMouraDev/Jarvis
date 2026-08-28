@@ -25,9 +25,9 @@ test.describe("Safe Agent Core UI", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.getByLabel("Selecionar agente")).toHaveValue("Hermes");
+    await expect(page.getByText("Hermes").first()).toBeVisible();
     await expect(page.getByTestId("state-label")).toBeVisible();
-    await expect(page.locator("header")).toContainText(/Hermes|internal/i);
+    await expect(page.getByRole("banner")).toContainText(/Hermes|internal/i);
     await page.keyboard.press("Meta+K");
     await expect(page.getByTestId("command-palette")).toHaveCount(0);
   });
@@ -49,7 +49,7 @@ test.describe("Safe Agent Core UI", () => {
 
   test("UI grava CSRF em sessionStorage após montar", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByLabel("Selecionar agente")).toBeVisible();
+    await expect(page.getByText("Hermes").first()).toBeVisible();
     await expect
       .poll(async () => csrfFromPage(page).catch(() => ""), { timeout: 10_000 })
       .toMatch(/.{10,}/);
@@ -57,6 +57,10 @@ test.describe("Safe Agent Core UI", () => {
 
   test("criar run atualiza presença e permite cancel", async ({ page }) => {
     await page.goto("/");
+    await expect(page.getByLabel("Compositor")).toBeVisible();
+    await expect
+      .poll(async () => csrfFromPage(page).catch(() => ""), { timeout: 10_000 })
+      .toMatch(/.{10,}/);
     const input = page.getByLabel("Compositor");
     await input.fill("ping seguro");
     await page.getByRole("button", { name: "Enviar" }).click();
@@ -64,10 +68,10 @@ test.describe("Safe Agent Core UI", () => {
     await expect(page.getByRole("button", { name: "cancel" })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByLabel("Selecionar agente")).toBeDisabled();
+    await expect(page.getByText("Hermes").first()).toBeVisible();
 
     await page.getByRole("button", { name: "cancel" }).click();
-    await expect(page.getByLabel("Selecionar agente")).toBeEnabled({
+    await expect(page.getByText("Hermes").first()) .toBeVisible({
       timeout: 15_000,
     });
   });
@@ -79,19 +83,28 @@ test.describe("Safe Agent Core UI", () => {
     const input = page.getByLabel("Compositor");
     await input.fill("estado para reload");
     await page.getByRole("button", { name: "Enviar" }).click();
-    await expect(page.getByText("você")).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByLabel("Transcrição").getByText("você"),
+    ).toBeVisible({ timeout: 15_000 });
 
     await page.reload();
-    await expect(page.getByLabel("Selecionar agente")).toBeVisible();
+    await expect(page.getByText("Hermes").first()).toBeVisible();
     await expect(page.getByTestId("state-label")).toBeVisible();
   });
 
-  test("troca de agente fica bloqueada durante run ativo", async ({ page }) => {
+  test("agente único Hermes, sem seletor durante run ativo", async ({ page }) => {
     await page.goto("/");
-    const selector = page.getByLabel("Selecionar agente");
-    await expect(selector).toBeEnabled();
+    await expect(page.getByRole("combobox", { name: /agente/i })).toHaveCount(0);
+    await expect(page.getByText("Hermes").first()).toBeVisible();
+    await expect
+      .poll(async () => csrfFromPage(page).catch(() => ""), { timeout: 10_000 })
+      .toMatch(/.{10,}/);
     await page.getByLabel("Compositor").fill("bloquear seletor");
     await page.getByRole("button", { name: "Enviar" }).click();
-    await expect(selector).toBeDisabled({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: "cancel" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("combobox", { name: /agente/i })).toHaveCount(0);
+    await expect(page.getByText("Hermes").first()).toBeVisible();
   });
 });

@@ -4,6 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { getJarvisDataDir } from "./data-dir";
 import { redactSecrets, redactStructured } from "./policy";
+import { configureSqliteConnection } from "./sqlite-connection";
 import type { PrivacyClass } from "./types";
 
 export type JsonValue =
@@ -21,6 +22,8 @@ export interface CoreSession {
   defaultAgentId: string | null;
   expiresAt: string | null;
   lastSeenAt: string | null;
+  deviceId: string | null;
+  identityLogin: string | null;
 }
 
 export interface SafeCoreSession extends CoreSession {
@@ -73,6 +76,27 @@ export interface CreateSafeSessionInput {
   expiresAt: string;
   createdAt: string;
   lastSeenAt: string;
+  deviceId?: string;
+  identityLogin?: string;
+}
+
+export interface CoreDevice {
+  deviceId: string;
+  identityLogin: string;
+  label: string;
+  kind: string;
+  status: "active" | "revoked";
+  createdAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+}
+
+export interface CreateDeviceInput {
+  deviceId?: string;
+  identityLogin: string;
+  label: string;
+  kind: string;
+  createdAt?: string;
 }
 
 export interface CreateRunInput {
@@ -322,6 +346,26 @@ const migrations = [
     CHECK (protocol_version = 1);
 `,
   },
+  {
+    version: 5,
+    sql: `
+  CREATE TABLE devices (
+    device_id TEXT PRIMARY KEY,
+    identity_login TEXT NOT NULL,
+    label TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    revoked_at TEXT
+  );
+
+  ALTER TABLE sessions ADD COLUMN device_id TEXT REFERENCES devices(device_id);
+  ALTER TABLE sessions ADD COLUMN identity_login TEXT;
+  CREATE INDEX sessions_by_device ON sessions(device_id);
+  CREATE INDEX devices_by_identity ON devices(identity_login, status);
+`,
+  },
 ] as const;
 
 function now(): string {
@@ -391,6 +435,8 @@ function mapSession(row: unknown): CoreSession | null {
     default_agent_id: string | null;
     expires_at: string | null;
     last_seen_at: string | null;
+    device_id: string | null;
+    identity_login: string | null;
   };
   return {
     sessionId: value.session_id,
@@ -399,6 +445,23 @@ function mapSession(row: unknown): CoreSession | null {
     defaultAgentId: value.default_agent_id,
     expiresAt: value.expires_at,
     lastSeenAt: value.last_seen_at,
+    deviceId: value.device_id,
+    identityLogin: value.identity_login,
+  };
+}
+
+function mapDevice(row: unknown): CoreDevice | null {
+  if (!row) return null;
+  const value = row as Record<string, string | null>;
+  return {
+    deviceId: String(value.device_id),
+    identityLogin: String(value.identity_login),
+    label: String(value.label),
+    kind: String(value.kind),
+    status: value.status as CoreDevice["status"],
+    createdAt: String(value.created_at),
+    lastSeenAt: String(value.last_seen_at),
+    revokedAt: value.revoked_at,
   };
 }
 
@@ -838,6 +901,8 @@ export class CoreStore {
       defaultAgentId: null,
       expiresAt: null,
       lastSeenAt: null,
+      deviceId: null,
+      identityLogin: null,
     };
     this.database
       .prepare("INSERT INTO sessions(session_id, created_at) VALUES (?, ?)")
@@ -856,12 +921,27 @@ export class CoreStore {
       expiresAt: assertText(input.expiresAt, "session expiry"),
       createdAt: assertText(input.createdAt, "session creation time"),
       lastSeenAt: assertText(input.lastSeenAt, "session last seen time"),
+      deviceId: input.deviceId ? assertText(input.deviceId, "device id") : null,
+      identityLogin: input.identityLogin
+        ? assertText(input.identityLogin, "identity login").toLowerCase()
+        : null,
     };
+    if (session.deviceId) {
+      const device = this.getDevice(session.deviceId);
+      if (
+        !device ||
+        device.status !== "active" ||
+        device.identityLogin !== session.identityLogin
+      ) {
+        throw new Error("invalid_session_device");
+      }
+    }
     this.database
       .prepare(
         `INSERT INTO sessions(
-           session_id, created_at, csrf_hash, default_agent_id, expires_at, last_seen_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
+           session_id, created_at, csrf_hash, default_agent_id, expires_at, last_seen_at,
+           device_id, identity_login
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         session.sessionId,
@@ -870,8 +950,67 @@ export class CoreStore {
         session.defaultAgentId,
         session.expiresAt,
         session.lastSeenAt,
+        session.deviceId,
+        session.identityLogin,
       );
     return session;
+  }
+
+  createDevice(input: CreateDeviceInput): CoreDevice {
+    const createdAt = input.createdAt ?? now();
+    const deviceId = assertText(input.deviceId ?? crypto.randomUUID(), "device id");
+    this.database
+      .prepare(
+        `INSERT INTO devices(
+           device_id, identity_login, label, kind, status, created_at, last_seen_at
+         ) VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+      )
+      .run(
+        deviceId,
+        assertText(input.identityLogin, "identity login").toLowerCase(),
+        assertText(input.label, "device label"),
+        assertText(input.kind, "device kind"),
+        createdAt,
+        createdAt,
+      );
+    return this.getDevice(deviceId)!;
+  }
+
+  getDevice(deviceId: string): CoreDevice | null {
+    return mapDevice(
+      this.database
+        .prepare("SELECT * FROM devices WHERE device_id = ?")
+        .get(assertText(deviceId, "device id")),
+    );
+  }
+
+  listDevices(identityLogin: string): CoreDevice[] {
+    return this.database
+      .prepare(
+        "SELECT * FROM devices WHERE identity_login = ? ORDER BY created_at ASC, device_id ASC",
+      )
+      .all(assertText(identityLogin, "identity login").toLowerCase())
+      .map((row) => mapDevice(row)!);
+  }
+
+  touchDevice(deviceId: string, lastSeenAt = now()): void {
+    this.database
+      .prepare(
+        "UPDATE devices SET last_seen_at = ? WHERE device_id = ? AND status = 'active'",
+      )
+      .run(lastSeenAt, assertText(deviceId, "device id"));
+  }
+
+  revokeDevice(deviceId: string, revokedAt = now()): CoreDevice {
+    const changed = this.database
+      .prepare(
+        `UPDATE devices
+         SET status = 'revoked', revoked_at = ?, last_seen_at = ?
+         WHERE device_id = ? AND status = 'active'`,
+      )
+      .run(revokedAt, revokedAt, assertText(deviceId, "device id"));
+    if (changed.changes !== 1) throw new Error("device_not_active");
+    return this.getDevice(deviceId)!;
   }
 
   getSession(sessionId: string): CoreSession | null {
@@ -1073,6 +1212,15 @@ export class CoreStore {
       return value;
     };
     return this.database.transaction(() => {
+      const existing = this.getSafeInvocation(input.invocationId);
+      if (existing) {
+        return {
+          invocation: existing,
+          approval: input.approvalId
+            ? this.getSafeApproval(input.approvalId)
+            : this.getSafeApprovalForInvocation(input.invocationId),
+        };
+      }
       const needsApproval = input.sideEffect !== "none";
       if (needsApproval && (!input.approvalId || !input.expiresAt)) {
         throw new TypeError("Mutating invocation requires approval");
@@ -1307,9 +1455,7 @@ export function openCoreStore(): CoreStore {
   const dataDir = getJarvisDataDir();
   mkdirSync(dataDir, { recursive: true });
   const database = new Database(path.join(dataDir, "core.db"));
-  database.pragma("journal_mode = WAL");
-  database.pragma("busy_timeout = 5000");
-  database.pragma("foreign_keys = ON");
+  configureSqliteConnection(database, { foreignKeys: true });
   try {
     applyMigrations(database);
     importLegacySources(database, dataDir);

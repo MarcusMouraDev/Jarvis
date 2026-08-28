@@ -1,9 +1,18 @@
 "use client";
 
 import { Canvas, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentState } from "@/core/types";
+import {
+  degradeTier,
+  getEffectsProfile,
+  resolveEffectsTier,
+  type EffectsTier,
+} from "./effects-profile";
+import { PresenceEffects } from "./PresenceEffects";
 import { PresenceMesh } from "./PresenceMesh";
+
+const POST_FX = false;
 
 interface PresenceCanvasProps {
   state: AgentState;
@@ -54,6 +63,20 @@ export function PresenceCanvas({
     typeof window !== "undefined" ? Math.min(window.devicePixelRatio, 1.75) : 1;
   const stopLoop = paused || reducedMotion;
 
+  const [gpuTier, setGpuTier] = useState<EffectsTier>(() =>
+    typeof window === "undefined"
+      ? "off"
+      : resolveEffectsTier({
+          width: window.innerWidth,
+          dpr: window.devicePixelRatio,
+          reducedMotion,
+          webglAvailable: true,
+          cores: navigator.hardwareConcurrency ?? 4,
+        }),
+  );
+  const tier = reducedMotion ? "off" : gpuTier;
+  const effectsProfile = useMemo(() => getEffectsProfile(tier), [tier]);
+
   return (
     <div
       className="relative z-20 h-full w-full"
@@ -90,6 +113,14 @@ export function PresenceCanvas({
           state={state}
           reducedMotion={reducedMotion}
         />
+        {POST_FX && tier !== "off" ? (
+          <PresenceEffects
+            profile={effectsProfile}
+            levelRef={levelRef}
+            paused={paused}
+            onDegrade={() => setGpuTier((t) => degradeTier(t))}
+          />
+        ) : null}
         <Suspense fallback={null}>
           <PresenceMesh
             state={state}

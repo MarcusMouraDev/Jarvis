@@ -1,0 +1,33 @@
+#cloud-config
+package_update: true
+packages: [docker.io, docker-compose-plugin, restic, jq, zram-tools]
+users:
+  - name: jarvis
+    uid: 1001
+    groups: [docker]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+write_files:
+  - path: /etc/sysctl.d/99-jarvis.conf
+    content: |
+      vm.swappiness=10
+  - path: /opt/jarvis/bootstrap-tailscale.sh
+    permissions: '0700'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      curl -fsSL https://tailscale.com/install.sh | sh
+      tailscale up --auth-key='${tailscale_auth_key}' --hostname=jarvis-hermes-oci --ssh
+      tailscale serve --bg http://127.0.0.1:3000
+runcmd:
+  - systemctl enable --now docker
+  - systemctl enable --now zramswap.service || true
+  - mkdir -p /srv/jarvis
+  - blkid /dev/oracleoci/oraclevdb || mkfs.ext4 -F /dev/oracleoci/oraclevdb
+  - mountpoint -q /srv/jarvis || mount /dev/oracleoci/oraclevdb /srv/jarvis
+  - grep -qE '[[:space:]]/srv/jarvis[[:space:]]' /etc/fstab || echo '/dev/oracleoci/oraclevdb /srv/jarvis ext4 defaults,nofail 0 2' >> /etc/fstab
+  - mkdir -p /srv/jarvis/data /srv/jarvis/hermes /srv/jarvis/omniroute /srv/jarvis/workspaces /srv/jarvis/backups
+  - chown -R 1001:1001 /srv/jarvis
+  - chmod 0750 /srv/jarvis /srv/jarvis/data /srv/jarvis/hermes /srv/jarvis/omniroute /srv/jarvis/workspaces /srv/jarvis/backups
+  - /opt/jarvis/bootstrap-tailscale.sh
+final_message: Jarvis OCI bootstrap complete; deploy Compose through Tailscale.

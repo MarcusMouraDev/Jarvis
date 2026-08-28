@@ -30,27 +30,6 @@ agents:
     memory_policy: manual
     budget_usd: 0
     timeout_ms: 1000
-  Planner:
-    workspace_mode: optional_existing
-    mutation_mode: none
-    tools: [code.context, terminal.read]
-    memory_policy: off
-    budget_usd: 0
-    timeout_ms: 1000
-  Developer:
-    workspace_mode: existing_repo
-    mutation_mode: controlled
-    tools: [code.context, terminal.read, terminal.run, file.patch]
-    memory_policy: manual
-    budget_usd: 0
-    timeout_ms: 1000
-  Builder:
-    workspace_mode: new_project
-    mutation_mode: controlled
-    tools: [terminal.read, terminal.run, file.patch, project.create]
-    memory_policy: consent
-    budget_usd: 0
-    timeout_ms: 1000
 `);
 
 function eventBase(provider: SafeModelProvider, model: string) {
@@ -183,6 +162,11 @@ describe("SafeModelOrchestrator", () => {
 
     expect(result).toEqual({ status: "completed", runId });
     expect(store.getRun(runId)?.status).toBe("completed");
+    expect(local.requests[0]?.systemInstruction).toContain("Você é Jarvis");
+    expect(local.requests[0]?.messages).toContainEqual({
+      role: "user",
+      content: "Keep this local\n\nContext:\n{\"source\":\"composer\"}",
+    });
     expect(store.replayEvents(runId).map((event) => event.type)).toEqual([
       "run.input_bound",
       "orchestrator.step",
@@ -870,6 +854,7 @@ describe("SafeModelOrchestrator", () => {
 
     await Promise.resolve();
     expect(orchestrator.cancel({ sessionId: "session-1", runId })).toBe(true);
+    expect(store.getRun(runId)?.status).toBe("cancelled");
 
     await expect(running).resolves.toEqual({ status: "cancelled", runId });
     expect(store.getRun(runId)?.status).toBe("cancelled");

@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { ZodError } from "zod";
 import {
   assertResolvedWorkspaceForAgent,
@@ -19,6 +20,7 @@ import { redactStructured } from "./policy";
 import {
   approvalDecisionRequestSchema,
   createRunRequestSchema,
+  resumeHermesSessionSchema,
   safeAgentIds,
   updateSessionRequestSchema,
   type SafeAgentSummary,
@@ -34,6 +36,8 @@ import type {
 } from "./safe-orchestrator";
 import { toSafeEventEnvelope } from "./safe-event-protocol";
 import { resolveWorkspace } from "./workspace-policy";
+import type { HermesBridgePort } from "@/integrations/hermes/bridge";
+import { choiceFromDecision } from "@/integrations/hermes/approval-map";
 
 interface ContinuationBinding {
   sessionId: string;
@@ -62,6 +66,7 @@ export interface SafeCoreServiceOptions {
   catalog: AgentCatalog;
   orchestrator: SafeCoreOrchestratorPort;
   toolGateway: SafeCoreToolGatewayPort;
+  hermes?: HermesBridgePort;
   projectsRoot?: string;
   listWorkspaceNames?: () => string[];
 }
@@ -285,27 +290,128 @@ export class SafeCoreService {
 
     const modelCostsExtra =
       this.options.catalog.models[requestedModel]?.costsExtra === true;
-    void this.options.orchestrator
-      .execute({
-        sessionId: session.sessionId,
-        runId: run.runId,
-        prompt: parsed.prompt,
-        context: { source: "composer" },
-        allowPaidProvider:
-          parsed.allowPaidProvider ||
-          (Boolean(parsed.modelAlias) && modelCostsExtra),
-        maxCostUsd: parsed.maxCostUsd,
-        timeoutMs: parsed.timeoutMs,
-      })
+    const cwd =
+      resolvedWorkspace.kind === "none"
+        ? (process.env.HERMES_DEFAULT_CWD?.trim() || join(homedir(), "Projetos"))
+        : resolvedWorkspace.path;
+    if (this.options.hermes) {
+      void this.options.hermes
+        .startTurn({
+          sessionId: session.sessionId,
+          runId: run.runId,
+          prompt: parsed.prompt,
+          cwd,
+          model: requestedModel,
+          attachments: parsed.attachments,
+        })
+        .catch(() => {
+          try {
+            this.failOrchestrationStart(run);
+          } catch {
+            // A concurrent terminal transition wins; never leak or rethrow provider details.
+          }
+        });
+    } else {
+      void this.options.orchestrator
+        .execute({
+          sessionId: session.sessionId,
+          runId: run.runId,
+          prompt: parsed.prompt,
+          context: { source: "composer" },
+          allowPaidProvider:
+            parsed.allowPaidProvider ||
+            (Boolean(parsed.modelAlias) && modelCostsExtra),
+          maxCostUsd: parsed.maxCostUsd,
+          timeoutMs: parsed.timeoutMs,
+        })
+        .catch(() => {
+          try {
+            this.failOrchestrationStart(run);
+          } catch {
+            // A concurrent terminal transition wins; never leak or rethrow provider details.
+          }
+        });
+    }
+
+    return this.getRunSnapshot(session, run.runId)!;
+  }
+
+  async resumeHermesSession(
+    session: CoreSession,
+    input: unknown,
+  ): Promise<SafeRunSnapshot> {
+    const parsed = parseInput(() => resumeHermesSessionSchema.parse(input));
+    if (!this.options.hermes) {
+      throw new SafeCoreServiceError("hermes_unavailable", 503);
+    }
+    const run = this.options.store.createRun({
+      sessionId: session.sessionId,
+      agentId: session.defaultAgentId ?? "Hermes",
+      privacyClass: "internal",
+      requestedModel: "local",
+      workspace: { kind: "none" },
+      status: "pending",
+    });
+    this.options.store.createMessage({
+      sessionId: session.sessionId,
+      runId: run.runId,
+      role: "user",
+      content: { text: `Retomar ${parsed.sessionId}` },
+    });
+    this.options.store.appendEvent({
+      runId: run.runId,
+      type: "run.created",
+      payload: { agentId: run.agentId, hermesSessionId: parsed.sessionId },
+    });
+    void this.options.hermes
+      .resumeSession({ runId: run.runId, hermesSessionId: parsed.sessionId })
       .catch(() => {
         try {
           this.failOrchestrationStart(run);
         } catch {
-          // A concurrent terminal transition wins; never leak or rethrow provider details.
+          // concurrent terminal transition
         }
       });
-
     return this.getRunSnapshot(session, run.runId)!;
+  }
+
+  async steerHermes(input: {
+    runId: string;
+    sessionId: string;
+    kind: "steer" | "interrupt-subagent" | "clarify";
+    subagentId?: string;
+    requestId?: string;
+    text?: string;
+  }): Promise<void> {
+    if (!this.options.hermes) {
+      throw new SafeCoreServiceError("hermes_unavailable", 503);
+    }
+    const run = this.options.store.getRun(input.runId);
+    if (!run || run.sessionId !== input.sessionId) {
+      throw new SafeCoreServiceError("run_not_found", 404);
+    }
+    if (input.kind === "steer") {
+      await this.options.hermes.steerSubagent({
+        runId: input.runId,
+        subagentId: input.subagentId ?? "",
+        text: input.text ?? "",
+      });
+      return;
+    }
+    if (input.kind === "interrupt-subagent") {
+      await this.options.hermes.interruptSubagent({
+        runId: input.runId,
+        subagentId: input.subagentId ?? "",
+      });
+      return;
+    }
+    const _exhaustive: "clarify" = input.kind;
+    void _exhaustive;
+    await this.options.hermes.respondClarify({
+      runId: input.runId,
+      requestId: input.requestId ?? "",
+      text: input.text ?? "",
+    });
   }
 
   getRunSnapshot(session: CoreSession, runId: string): SafeRunSnapshot | null {
@@ -351,6 +457,9 @@ export class SafeCoreService {
   cancelRun(session: CoreSession, runId: string): SafeRunSnapshot | null {
     const run = this.options.store.getRun(runId);
     if (!run || run.sessionId !== session.sessionId) return null;
+    if (this.options.hermes) {
+      void this.options.hermes.interrupt(runId);
+    }
     const cancelled = this.options.orchestrator.cancel({
       sessionId: session.sessionId,
       runId,
@@ -388,6 +497,7 @@ export class SafeCoreService {
     };
     if (
       parsed.decision === "approved" &&
+      !this.options.hermes &&
       !this.options.orchestrator.hasPendingContinuation(binding)
     ) {
       throw new SafeCoreServiceError("continuation_unavailable", 409);
@@ -398,7 +508,13 @@ export class SafeCoreService {
       sessionId: session.sessionId,
       decision: parsed.decision,
     });
-    if (decided.status === "approved") {
+    if (this.options.hermes) {
+      await this.options.hermes.respondApproval({
+        runId: approval.runId,
+        approvalId,
+        choice: parsed.choice ?? choiceFromDecision(parsed.decision),
+      });
+    } else if (decided.status === "approved") {
       await this.options.orchestrator.resumePendingTool(binding);
     } else {
       this.options.orchestrator.discardPendingContinuation(binding);

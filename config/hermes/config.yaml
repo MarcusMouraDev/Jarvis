@@ -1,0 +1,11 @@
+model:
+  default: jarvis-broker
+  provider: custom:jarvis-broker
+
+providers:
+  jarvis-broker:
+    api: http://jarvis-worker:3001/api/internal/hermes/v1
+    key_env: HERMES_BROKER_TOKEN
+    transport: chat_completions
+    default_model: jarvis-broker
+    discover_models: false

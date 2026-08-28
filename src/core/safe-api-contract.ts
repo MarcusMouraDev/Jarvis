@@ -3,7 +3,7 @@ import type { JsonValue } from "./core-store";
 import type { AgentMemoryPolicy, AgentMutationMode, AgentWorkspaceMode } from "./agent-catalog";
 import type { PrivacyClass } from "./types";
 
-export const safeAgentIds = ["Hermes", "Planner", "Developer", "Builder"] as const;
+export const safeAgentIds = ["Hermes"] as const;
 export const agentIdSchema = z.enum(safeAgentIds);
 export const privacyClassSchema = z.enum([
   "public",
@@ -23,6 +23,18 @@ export const publicWorkspaceRequestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("new"), name: workspaceNameSchema }).strict(),
 ]);
 
+const attachmentSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("file"), path: z.string().trim().min(1).max(4096) }).strict(),
+  z.object({ kind: z.literal("image"), path: z.string().trim().min(1).max(4096) }).strict(),
+  z
+    .object({
+      kind: z.literal("image-bytes"),
+      contentBase64: z.string().min(1).max(8_000_000),
+      filename: z.string().trim().max(255).optional(),
+    })
+    .strict(),
+]);
+
 export const createRunRequestSchema = z
   .object({
     prompt: z.string().trim().min(1).max(32_000),
@@ -33,16 +45,43 @@ export const createRunRequestSchema = z
     allowPaidProvider: z.boolean().default(false),
     maxCostUsd: z.number().finite().nonnegative().optional(),
     timeoutMs: z.number().int().positive().optional(),
+    attachments: z.array(attachmentSchema).max(8).optional(),
   })
+  .strict();
+
+export const resumeHermesSessionSchema = z
+  .object({ sessionId: z.string().trim().min(1).max(200) })
   .strict();
 
 export const updateSessionRequestSchema = z
   .object({ defaultAgentId: agentIdSchema })
   .strict();
 
+export const hermesApprovalChoiceSchema = z.enum([
+  "once",
+  "session",
+  "always",
+  "deny",
+]);
+
 export const approvalDecisionRequestSchema = z
-  .object({ decision: z.enum(["approved", "denied"]) })
-  .strict();
+  .object({
+    decision: z.enum(["approved", "denied"]).optional(),
+    choice: hermesApprovalChoiceSchema.optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.decision || value.choice), {
+    message: "decision_or_choice_required",
+  })
+  .transform((value) => {
+    const choice =
+      value.choice ?? (value.decision === "denied" ? "deny" : "once");
+    return {
+      decision:
+        value.decision ?? (choice === "deny" ? "denied" : "approved"),
+      choice,
+    } as const;
+  });
 
 export const eventEnvelopeSchema = z
   .object({

@@ -69,6 +69,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ jobs });
     }
     default:
+      // Runtime JSON can bypass the TypeScript union; keep the public 400 contract.
+      const unreachable: never = body.action;
+      void unreachable;
       return NextResponse.json({ error: "unknown_action" }, { status: 400 });
   }
 }

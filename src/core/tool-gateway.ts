@@ -13,6 +13,7 @@ import type { AgentCatalog } from "./agent-catalog";
 import { getAgent } from "./agent-catalog";
 import type { CoreRun, CoreStore, JsonValue } from "./core-store";
 import { redactSecrets, redactStructured } from "./policy";
+import { stableJson } from "@/lib/stable-json";
 import { runOmnirouteMcpTool } from "@/integrations/omniroute-mcp/run";
 import {
   compressToolOutput,
@@ -141,20 +142,6 @@ function toJsonValue(value: unknown): JsonValue {
     );
   }
   throw new TypeError("tool_value_not_json");
-}
-
-function stableValue(value: JsonValue): JsonValue {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(stableValue);
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, stableValue(value[key])]),
-  );
-}
-
-function stableJson(value: JsonValue): string {
-  return JSON.stringify(stableValue(value));
 }
 
 function digest(value: JsonValue): string {

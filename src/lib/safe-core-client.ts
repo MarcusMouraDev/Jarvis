@@ -53,16 +53,13 @@ function writeStoredSession(session: StoredCsrf): void {
   sessionStorage.setItem(CSRF_STORAGE_KEY, JSON.stringify(session));
 }
 
-export async function ensureSafeSession(): Promise<SafeSessionClient> {
-  const cached = readStoredSession();
-  if (cached) {
-    return {
-      csrfToken: cached.csrfToken,
-      defaultAgentId: cached.defaultAgentId,
-      expiresAt: cached.expiresAt,
-    };
-  }
+function clearStoredSession(): void {
+  sessionStorage.removeItem(CSRF_STORAGE_KEY);
+}
 
+let bootstrapInFlight: Promise<SafeSessionClient> | null = null;
+
+async function fetchBootstrap(): Promise<SafeSessionClient> {
   const response = await fetch("/api/session/bootstrap", {
     method: "GET",
     credentials: "same-origin",
@@ -87,6 +84,21 @@ export async function ensureSafeSession(): Promise<SafeSessionClient> {
   return session;
 }
 
+export async function ensureSafeSession(): Promise<SafeSessionClient> {
+  const cached = readStoredSession();
+  if (cached) {
+    return {
+      csrfToken: cached.csrfToken,
+      defaultAgentId: cached.defaultAgentId,
+      expiresAt: cached.expiresAt,
+    };
+  }
+  bootstrapInFlight ??= fetchBootstrap().finally(() => {
+    bootstrapInFlight = null;
+  });
+  return bootstrapInFlight;
+}
+
 function toHeaderRecord(init?: HeadersInit): Record<string, string> {
   const headers: Record<string, string> = {};
   if (!init) return headers;
@@ -106,6 +118,7 @@ function toHeaderRecord(init?: HeadersInit): Record<string, string> {
 export async function safeCoreFetch(
   path: string,
   init: RequestInit = {},
+  retry = true,
 ): Promise<Response> {
   const session = await ensureSafeSession();
   const headers = toHeaderRecord(init.headers);
@@ -113,11 +126,17 @@ export async function safeCoreFetch(
   if (init.body && !Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
     headers["Content-Type"] = "application/json";
   }
-  return fetch(path, {
+  const response = await fetch(path, {
     ...init,
     credentials: "same-origin",
     headers,
   });
+  if (response.status === 401 && retry) {
+    clearStoredSession();
+    bootstrapInFlight = null;
+    return safeCoreFetch(path, init, false);
+  }
+  return response;
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -202,11 +221,14 @@ export async function* streamRunEvents(
 ): AsyncGenerator<SafeEventEnvelope, void, undefined> {
   const headers: Record<string, string> = {};
   if (lastEventId) headers["Last-Event-ID"] = lastEventId;
-  const response = await safeCoreFetch(`/api/runs/${encodeURIComponent(runId)}/events`, {
-    method: "GET",
-    headers,
-    signal,
-  });
+  const response = await safeCoreFetch(
+    `/api/runs/${encodeURIComponent(runId)}?stream=1`,
+    {
+      method: "GET",
+      headers: { ...headers, Accept: "text/event-stream" },
+      signal,
+    },
+  );
   if (!response.ok) {
     throw new Error(`sse_http_${response.status}`);
   }

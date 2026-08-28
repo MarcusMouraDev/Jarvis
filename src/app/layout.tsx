@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
+import { PwaRuntime } from "@/ui/PwaRuntime";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Jarvis V21",
+  title: "Jarvis",
   description: "Presença viva — interface de assistente com estados cromáticos",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Jarvis", statusBarStyle: "black-translucent" },
+  icons: { icon: "/jarvis.svg", apple: "/jarvis.svg" },
 };
 
 export default function RootLayout({
@@ -13,7 +17,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">
+        <PwaRuntime />
+        {children}
+      </body>
     </html>
   );
 }

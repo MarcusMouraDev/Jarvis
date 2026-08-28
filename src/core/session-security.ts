@@ -1,9 +1,14 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isSafeAgentCoreEnabled } from "@/integrations/flags";
 import { openCoreStore, type CoreSession, type CoreStore } from "./core-store";
-import { validateLoopbackRequest } from "./request-trust";
+import { validateTrustedWebRequest } from "./request-trust";
 
-export { validateLoopbackRequest } from "./request-trust";
+export {
+  validateInternalServiceRequest,
+  validateLoopbackRequest,
+  validateTailscaleServeRequest,
+  validateTrustedWebRequest,
+} from "./request-trust";
 
 export const SESSION_COOKIE_NAME = "jarvis_session";
 export const CSRF_HEADER_NAME = "X-Jarvis-CSRF";
@@ -39,7 +44,7 @@ export function requireProtectedRequest(
       response: Response.json({ error: "safe_core_disabled" }, { status: 404 }),
     };
   }
-  if (!validateLoopbackRequest(request)) {
+  if (!validateTrustedWebRequest(request)) {
     return {
       ok: false,
       response: Response.json({ error: "forbidden" }, { status: 403 }),
@@ -51,11 +56,17 @@ export function requireProtectedRequest(
   const csrfToken = request.headers.get(CSRF_HEADER_NAME);
   const now = options.now ?? new Date();
   const csrfValid = csrfMatches(csrfToken, session?.csrfHash ?? null);
+  const device = session?.deviceId ? store.getDevice(session.deviceId) : null;
+  const deviceValid =
+    session?.deviceId === null ||
+    (device?.status === "active" &&
+      device.identityLogin === session?.identityLogin);
   const authenticated =
     session !== null &&
     session.expiresAt !== null &&
     Date.parse(session.expiresAt) > now.getTime() &&
-    csrfValid;
+    csrfValid &&
+    deviceValid;
 
   if (!authenticated) {
     return {
@@ -65,6 +76,7 @@ export function requireProtectedRequest(
   }
 
   store.updateSessionLastSeen(session.sessionId, now.toISOString());
+  if (session.deviceId) store.touchDevice(session.deviceId, now.toISOString());
   return {
     ok: true,
     session: { ...session, lastSeenAt: now.toISOString() },

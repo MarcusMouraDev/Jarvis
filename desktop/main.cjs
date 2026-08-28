@@ -11,13 +11,17 @@ const {
   globalShortcut,
   nativeImage,
   dialog,
+  safeStorage,
+  Notification,
 } = require("electron");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { JarvisCompanion } = require("./companion.cjs");
 
 const JARVIS_ROOT = path.resolve(__dirname, "..");
 const SIDECARS = path.join(JARVIS_ROOT, "scripts", "sidecars.sh");
-const JARVIS_URL = "http://127.0.0.1:3000/";
+const JARVIS_URL = process.env.JARVIS_URL || "http://127.0.0.1:3000/";
+const REMOTE_MODE = !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(JARVIS_URL);
 const OMNI_URL = "http://127.0.0.1:20128/";
 const JARVIS_BG = "#0a1020";
 const LOAD_RETRIES = 8;
@@ -34,6 +38,7 @@ let tray = null;
 let sidecarsAttempted = false;
 let isQuitting = false;
 let loadRetryTimer = null;
+let companion = null;
 
 function nodePathEnv() {
   const extras = ["/opt/homebrew/bin", "/usr/local/bin"];
@@ -66,7 +71,7 @@ function sidecarStatus() {
   try {
     return JSON.parse(String(result.stdout || "").trim().split("\n").pop());
   } catch {
-    return { omni: "unknown", jarvis: "unknown" };
+    return { omni: "unknown", jarvis: "unknown", hermes: "unknown" };
   }
 }
 
@@ -86,8 +91,11 @@ function httpReachable(url, timeoutMs = 120_000) {
 }
 
 function ensureSidecarsRunning() {
+  if (REMOTE_MODE) return true;
   const status = sidecarStatus();
-  if (status.jarvis === "up" && status.omni === "up") return true;
+  if (status.jarvis === "up" && status.omni === "up" && status.hermes === "up") {
+    return true;
+  }
   sidecarsAttempted = true;
   return runSidecars("start");
 }
@@ -269,15 +277,34 @@ function buildTray() {
 
 function registerIpc() {
   ipcMain.handle("sidecars-status", () => sidecarStatus());
+  ipcMain.handle("companion-status", () => companion?.status() ?? { paired: false, grants: [] });
+  ipcMain.handle("companion-pair", (_event, input) =>
+    companion?.pair({ baseUrl: input?.baseUrl || JARVIS_URL, code: String(input?.code || "") }),
+  );
+  ipcMain.handle("companion-add-grant", () => companion?.addGrant());
+  ipcMain.handle("companion-upload-file", (_event, workspaceId) =>
+    companion?.uploadSelectedFile(String(workspaceId || "jarvis")),
+  );
   ipcMain.on("open-omni-dashboard", () => openDashboard());
 }
 
 app.on("second-instance", showMain);
 
 app.whenReady().then(() => {
+  companion = new JarvisCompanion({
+    app,
+    safeStorage,
+    dialog,
+    notify: (title, body) => new Notification({ title, body }).show(),
+    showMain,
+    onAccess: (active, capability) => {
+      tray?.setToolTip(active ? `Jarvis — acessando ${capability}` : "Jarvis");
+      mainWindow?.webContents.send("companion-access", { active, capability });
+    },
+  });
   registerIpc();
-  sidecarsAttempted = true;
-  const ok = runSidecars("start");
+  sidecarsAttempted = !REMOTE_MODE;
+  const ok = REMOTE_MODE || runSidecars("start");
   if (!ok) {
     dialog.showErrorBox(
       "Jarvis",
@@ -286,6 +313,7 @@ app.whenReady().then(() => {
   }
   createMainWindow();
   buildTray();
+  companion.start();
   const shortcutOk = globalShortcut.register("CommandOrControl+Shift+J", showMain);
   if (!shortcutOk) {
     console.warn("[Jarvis] atalho Cmd+Shift+J já em uso");
@@ -296,6 +324,7 @@ app.on("before-quit", () => {
   isQuitting = true;
   clearLoadRetry();
   globalShortcut.unregisterAll();
+  companion?.stop();
   if (sidecarsAttempted) runSidecars("stop");
 });
 

@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev --turbopack --hostname 127.0.0.1",
     "build": "next build",
+    "build:vps": "JARVIS_BUILD_PROFILE=vps-safe next build && node scripts/assert-vps-standalone.mjs",
+    "build:desktop": "JARVIS_BUILD_PROFILE=desktop-legacy next build",
     "start": "next start --hostname 127.0.0.1",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -15,11 +17,15 @@
     "skills:sync": "node scripts/sync-cursor-skills.mjs",
     "up": "bash scripts/j",
     "j": "bash scripts/j",
+    "inti": "bash scripts/jarvis inti",
+    "jarvis:install-cli": "bash scripts/install-cli.sh",
     "keep-open": "bash scripts/keep-open",
     "postinstall": "node scripts/ensure-electron.mjs",
-    "desktop": "node scripts/ensure-electron.mjs && electron desktop/main.cjs",
-    "desktop:dev": "node scripts/ensure-electron.mjs && JARVIS_NEXT_DEV=1 electron desktop/main.cjs",
-    "eval:benchmark": "tsx evaluation/run-benchmark.ts"
+    "desktop": "JARVIS_FORCE_ELECTRON=1 node scripts/ensure-electron.mjs && electron desktop/main.cjs",
+    "desktop:dev": "JARVIS_FORCE_ELECTRON=1 node scripts/ensure-electron.mjs && JARVIS_NEXT_DEV=1 electron desktop/main.cjs",
+    "eval:benchmark": "tsx evaluation/run-benchmark.ts",
+    "eval:soul:self-test": "/Users/marcuspaulo/.local/share/venvs/outlines/bin/python scripts/evaluate-jarvis-soul.py --self-test",
+    "eval:soul": "/Users/marcuspaulo/.local/share/venvs/outlines/bin/python scripts/evaluate-jarvis-soul.py --cases-file evaluation/jarvis-soul-cases.json"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.27",
@@ -29,7 +35,11 @@
     "next": "^16.3.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "three": "^0.180.0",
+    "ws": "^8.21.3",
     "yaml": "^2.8.1",
     "zod": "^4.1.5"
   },
@@ -41,6 +51,7 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@types/three": "^0.180.0",
+    "@types/ws": "^8.18.1",
     "electron": "^38.8.6",
     "eslint": "^9.33.0",
     "eslint-config-next": "^16.3.0",

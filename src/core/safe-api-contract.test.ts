@@ -30,11 +30,13 @@ describe("safe API contracts", () => {
         modelAlias: "gemini",
         allowPaidProvider: true,
         workspace: { kind: "none" },
+        attachments: [{ kind: "file", path: "/tmp/note.md" }],
       }),
     ).toMatchObject({
       prompt: "oi",
       modelAlias: "gemini",
       allowPaidProvider: true,
+      attachments: [{ kind: "file", path: "/tmp/note.md" }],
     });
   });
 
@@ -69,11 +71,16 @@ describe("safe API contracts", () => {
   });
 
   it("validates session updates and approval decisions strictly", () => {
-    expect(updateSessionRequestSchema.parse({ defaultAgentId: "Planner" })).toEqual({
-      defaultAgentId: "Planner",
+    expect(updateSessionRequestSchema.parse({ defaultAgentId: "Hermes" })).toEqual({
+      defaultAgentId: "Hermes",
     });
     expect(approvalDecisionRequestSchema.parse({ decision: "approved" })).toEqual({
       decision: "approved",
+      choice: "once",
+    });
+    expect(approvalDecisionRequestSchema.parse({ choice: "always" })).toEqual({
+      decision: "approved",
+      choice: "always",
     });
     expect(() => updateSessionRequestSchema.parse({ defaultAgentId: "Unknown" })).toThrow();
     expect(() => approvalDecisionRequestSchema.parse({ decision: "allow" })).toThrow();

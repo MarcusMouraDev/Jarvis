@@ -10,6 +10,7 @@ import {
   resetSafeCoreRuntimeForTests,
   setSafeCoreRuntimeForTests,
 } from "@/core/safe-core-runtime";
+import { GET } from "./route";
 
 const fetchOmnirouteUsageReport = vi.fn();
 
@@ -88,7 +89,6 @@ describe("GET /api/omniroute/usage", () => {
   }
 
   it("returns 401 without a session when safe core is on", async () => {
-    const { GET } = await import("./route");
     const response = await GET(
       request({ headers: { cookie: "", "X-Jarvis-CSRF": "" } }),
     );
@@ -106,7 +106,6 @@ describe("GET /api/omniroute/usage", () => {
       compression: null,
       source: {},
     });
-    const { GET } = await import("./route");
     const response = await GET(request());
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toMatchObject({ omniUp: false });
@@ -136,7 +135,6 @@ describe("GET /api/omniroute/usage", () => {
         compression: "omniroute:/api/compression/status",
       },
     });
-    const { GET } = await import("./route");
     const response = await GET(request());
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({

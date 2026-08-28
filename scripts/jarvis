@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# jarvis — ativação no terminal (modo canônico: jarvis inti)
+set -euo pipefail
+
+resolve_script_dir() {
+  local source="${BASH_SOURCE[0]}"
+  while [[ -L "$source" ]]; do
+    local dir
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  cd -P "$(dirname "$source")" && pwd
+}
+
+SCRIPT_DIR="$(resolve_script_dir)"
+
+usage() {
+  cat <<'EOF'
+Jarvis — ativação no terminal
+
+  jarvis inti     Sobe OmniRoute + Hermes + Jarvis e abre a UI
+  jarvis status   Status dos sidecars (omni, hermes, jarvis)
+  jarvis stop     Para sidecars iniciados por este host
+
+Modo de ativação: jarvis inti
+EOF
+}
+
+case "${1:-}" in
+  inti|init)
+    exec "$SCRIPT_DIR/j"
+    ;;
+  status)
+    exec "$SCRIPT_DIR/sidecars.sh" status
+    ;;
+  stop)
+    exec "$SCRIPT_DIR/sidecars.sh" stop
+    ;;
+  ""|help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "jarvis: comando desconhecido '${1:-}' (tente: jarvis inti)" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

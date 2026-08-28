@@ -12,6 +12,22 @@ Jarvis V23 — presença viva. Interface web com globo neural WebGL reativo a es
 
 ## Desenvolvimento
 
+### Ativação (terminal)
+
+Modo canônico — sobe OmniRoute + Hermes + Jarvis e abre a UI:
+
+```bash
+jarvis inti
+```
+
+Primeira vez, instale o comando no PATH:
+
+```bash
+npm run jarvis:install-cli   # symlink em ~/.local/bin/jarvis
+```
+
+Equivalente dentro do repo: `npm run inti` ou `npm run up`.
+
 ```bash
 export PATH="/opt/homebrew/bin:$PATH"
 npm install
@@ -62,8 +78,12 @@ Sem chave configurada, o alias cai no mock (visível na rota `mode: mock`).
 
 | Comando | Descrição |
 |---------|-----------|
-| `npm run dev` | Servidor de desenvolvimento |
+| `npm run up` | Sobe sidecars e abre UI (igual `jarvis inti`) |
+| `npm run inti` | Ativação canônica via CLI local |
+| `npm run jarvis:install-cli` | Instala `jarvis` em `~/.local/bin` |
 | `npm run build` | Build de produção |
+| `npm run build:vps` | Build VPS Safe Core; valida que Electron não entra no standalone |
+| `npm run build:desktop` | Build interno desktop/legado, incluindo Electron |
 | `npm run lint` | ESLint (flat config Next 16) |
 | `npm run typecheck` | TypeScript sem emit |
 | `npm test` | Suite Vitest |
@@ -83,3 +103,11 @@ Sem chave configurada, o alias cai no mock (visível na rota `mode: mock`).
 | failure | Sem cor nova — perde coerência |
 
 Configuração de modelos: `config/models.yaml`. Sistema visual: `DESIGN.md`. Arquitetura, segurança e evolução: [`docs/`](docs/README.md).
+
+## VPS OCI
+
+Deploy adaptável para Oracle Always Free A1 (ARM64) e VPS 4x8: [`docs/deploy/oci-a1-free.md`](docs/deploy/oci-a1-free.md). Compose separa `jarvis-web` em localhost de `jarvis-worker` privado, configura Hermes como `custom:jarvis-broker`, usa bind mounts sob `/srv/jarvis` e exige imagens fixadas por digest.
+
+PWA privada, workspace versionado, Mac companion e Telegram: [`docs/deploy/clients-workspace.md`](docs/deploy/clients-workspace.md).
+
+Regras Cursor importadas de `/Users/marcuspaulo/.cursor/plugins/cache`: `no-inline-imports`, `typescript-exhaustive-switch` e `mobbin-usage`. Fontes e classificação: [`docs/rules/cursor-import.md`](docs/rules/cursor-import.md).

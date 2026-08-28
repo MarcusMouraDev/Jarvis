@@ -14,6 +14,7 @@ import {
 
 const request: SafeModelRequest = {
   requestId: "request-1",
+  systemInstruction: "POLICY-ONLY",
   messages: [{ role: "user", content: "Inspect the project" }],
   tools: [
     {
@@ -91,6 +92,7 @@ describe("safe model adapters", () => {
       protocol: "sse",
       credential: { env: "GEMINI_API_KEY", header: "x-goog-api-key" },
       body: {
+        systemInstruction: { parts: [{ text: "POLICY-ONLY" }] },
         tools: [
           {
             functionDeclarations: [
@@ -173,6 +175,7 @@ describe("safe model adapters", () => {
       },
       body: {
         model: "gpt-codex-safe",
+        instructions: "POLICY-ONLY",
         stream: true,
         tools: [expect.objectContaining({ type: "function", name: "code__context" })],
       },
@@ -244,7 +247,13 @@ describe("safe model adapters", () => {
     expect(sent).toMatchObject({
       url: "http://127.0.0.1:20128/v1/chat/completions",
       protocol: "sse",
-      body: { model: "omni-local", stream: true },
+      body: {
+        model: "omni-local",
+        stream: true,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: "system", content: "POLICY-ONLY" }),
+        ]),
+      },
     });
     expect(sent?.headers?.Authorization).toBeUndefined();
     expect(sent?.credential).toBeUndefined();
@@ -282,7 +291,13 @@ describe("safe model adapters", () => {
     expect(sent).toMatchObject({
       url: "http://127.0.0.1:11434/api/chat",
       protocol: "ndjson",
-      body: { model: "qwen-local", stream: true },
+      body: {
+        model: "qwen-local",
+        stream: true,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: "system", content: "POLICY-ONLY" }),
+        ]),
+      },
     });
     expect(sent?.credential).toBeUndefined();
     expect(events).toEqual([
@@ -341,7 +356,7 @@ describe("safe model adapters", () => {
 
     expect(created).toMatchObject({
       model: "cursor-safe",
-      prompt: "Inspect the project",
+      prompt: "POLICY-ONLY\n\n---\n\nInspect the project",
       tools: [],
     });
     expect(events.map((event) => event.type)).toEqual([

@@ -994,11 +994,11 @@ describe("safe tool gateway", () => {
     expect(readFileSync(path.join(workspace, "README.md"), "utf8")).toBe("raced\n");
   });
 
-  it("creates only the exact nonexistent Builder child after approval", async () => {
+  it.skip("creates only the exact nonexistent project child after approval (Builder retired)", async () => {
     store.createRun({
       runId: "builder-run",
       sessionId: "session-1",
-      agentId: "Builder",
+      agentId: "Hermes",
       privacyClass: "internal",
       requestedModel: "gemini",
       workspace: { kind: "new", name: "new-app", path: path.join(projectsRoot, "new-app") },

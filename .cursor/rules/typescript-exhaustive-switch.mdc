@@ -1,0 +1,8 @@
+---
+description: Use exhaustive switch handling for TypeScript unions and enums
+alwaysApply: true
+---
+
+<!-- Imported from /Users/marcuspaulo/.cursor/plugins/cache/cursor-public/cursor-team-kit/bdf7aa355337897f167153e05069aca505dae17c/rules/typescript-exhaustive-switch.mdc -->
+
+typescript-exhaustive-switch: In switch statements over discriminated unions or enums, use a `never` check in the default case so newly added variants cause compile-time failures until handled.

@@ -2,7 +2,8 @@ import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadAgentCatalogFromDisk, type AgentCatalog } from "./agent-catalog";
-import { openCoreStore, type CoreStore } from "./core-store";
+import type { CoreStore } from "./core-store";
+import { getCoreStore } from "./core-store-runtime";
 import {
   CodexOpenAIAdapter,
   CursorTextSafeAdapter,
@@ -18,6 +19,7 @@ import {
 } from "./safe-core-service";
 import { SafeModelOrchestrator } from "./safe-orchestrator";
 import { SafeToolGateway } from "./tool-gateway";
+import { getHermesBridge } from "@/integrations/hermes/bridge";
 import { resolveWorkspace } from "./workspace-policy";
 
 type ReadEnv = (name: string) => string | undefined;
@@ -116,7 +118,7 @@ export function createSafeCoreRuntime(
     options.projectsRoot ??
     readEnv("JARVIS_PROJECTS_ROOT") ??
     join(homedir(), "Projetos");
-  const store = options.store ?? openCoreStore();
+  const store = options.store ?? getCoreStore();
   const catalog = options.catalog ?? loadAgentCatalogFromDisk();
   const gateway = new SafeToolGateway({ store, catalog });
   const orchestrator = new SafeModelOrchestrator({
@@ -136,6 +138,12 @@ export function createSafeCoreRuntime(
       { allowZero: true },
     ),
   });
+  const hermes =
+    process.env.NODE_ENV === "test" &&
+    !readEnv("HERMES_GATEWAY_URL") &&
+    !readEnv("HERMES_BRIDGE")
+      ? undefined
+      : getHermesBridge(store);
   const service = new SafeCoreService({
     store,
     catalog,
@@ -143,6 +151,7 @@ export function createSafeCoreRuntime(
     projectsRoot,
     listWorkspaceNames: () => listSecureWorkspaceNames(projectsRoot),
     toolGateway: gateway,
+    hermes,
   });
   return { store, catalog, gateway, orchestrator, service };
 }

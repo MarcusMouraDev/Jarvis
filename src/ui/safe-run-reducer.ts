@@ -10,6 +10,9 @@ export interface SafeRunUiState {
   assistantText: string;
   effectiveModel: { provider: string; model: string } | null;
   pendingApproval: SafeApprovalView | null;
+  pendingClarify: { requestId: string; prompt: string } | null;
+  subagents: ReadonlyArray<{ id: string; name: string; status: "running" | "done" }>;
+  tools: ReadonlyArray<{ toolId: string; name: string; status: "started" | "completed" }>;
   fallback: { from: string; to: string; reason: string } | null;
   protocolError: string | null;
   failureReason: string | null;
@@ -34,8 +37,10 @@ function approvalFromPayload(
   const approvalId = asString(record.approvalId);
   const invocationId = asString(record.invocationId);
   const toolId = asString(record.toolId);
-  const expiresAt = asString(record.expiresAt);
-  if (!approvalId || !invocationId || !toolId || !expiresAt) return null;
+  const expiresAt =
+    asString(record.expiresAt) ??
+    new Date((Date.parse(createdAt) || Date.now()) + 300_000).toISOString();
+  if (!approvalId || !invocationId || !toolId) return null;
   return {
     approvalId,
     invocationId,
@@ -58,6 +63,9 @@ export function initialSafeRunState(): SafeRunUiState {
     assistantText: "",
     effectiveModel: null,
     pendingApproval: null,
+    pendingClarify: null,
+    subagents: [],
+    tools: [],
     fallback: null,
     protocolError: null,
     failureReason: null,
@@ -130,18 +138,62 @@ export function applySafeEvent(
         runStatus: "waiting_approval",
         pendingApproval: approvalFromPayload(payload, event.ts),
       };
-    case "tool.completed":
+    case "tool.started": {
+      const toolId = asString(record?.toolId) ?? asString(record?.name) ?? "tool";
+      const name = asString(record?.name) ?? toolId;
+      return {
+        ...next,
+        presence: "thinking",
+        tools: [...next.tools.filter((tool) => tool.toolId !== toolId), { toolId, name, status: "started" }],
+      };
+    }
+    case "tool.completed": {
+      const toolId = asString(record?.toolId) ?? asString(record?.name) ?? "tool";
       return {
         ...next,
         presence: "thinking",
         pendingApproval: null,
         runStatus: "running",
+        tools: next.tools.map((tool) =>
+          tool.toolId === toolId ? { ...tool, status: "completed" as const } : tool,
+        ),
+      };
+    }
+    case "subagent.started": {
+      const id = asString(record?.id) ?? "subagent";
+      const name = asString(record?.name) ?? id;
+      return {
+        ...next,
+        subagents: [
+          ...next.subagents.filter((item) => item.id !== id),
+          { id, name, status: "running" },
+        ],
+      };
+    }
+    case "subagent.completed": {
+      const id = asString(record?.id) ?? asString(record?.subagent_id) ?? "subagent";
+      return {
+        ...next,
+        subagents: next.subagents.map((item) =>
+          item.id === id ? { ...item, status: "done" as const } : item,
+        ),
+      };
+    }
+    case "clarify.required":
+      return {
+        ...next,
+        presence: "asking",
+        pendingClarify: {
+          requestId: asString(record?.requestId) ?? "clarify",
+          prompt: asString(record?.prompt) ?? "",
+        },
       };
     case "run.completed":
       return {
         ...next,
         presence: "idle",
         pendingApproval: null,
+        pendingClarify: null,
         runStatus: "completed",
       };
     case "run.failed":

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getSafeToolManifest } from "./safe-tool-manifests";
 import type { ResolvedWorkspace, WorkspaceRequest } from "./workspace-policy";
 
-const agentIds = ["Hermes", "Planner", "Developer", "Builder"] as const;
+const agentIds = ["Hermes"] as const;
 const workspaceModeSchema = z.enum([
   "optional_existing",
   "existing_repo",
@@ -127,7 +127,7 @@ export function loadAgentCatalogFromYaml(raw: string): AgentCatalog {
 
   const actualAgentIds = Object.keys(parsed.agents).sort();
   if (actualAgentIds.join(",") !== [...agentIds].sort().join(",")) {
-    fail("must define exactly Hermes, Planner, Developer and Builder");
+    fail("must define exactly Hermes");
   }
 
   const models = Object.fromEntries(

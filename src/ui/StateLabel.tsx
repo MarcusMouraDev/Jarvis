@@ -19,7 +19,7 @@ interface StateLabelProps {
 export function StateLabel({ state }: StateLabelProps) {
   return (
     <p
-      className={`text-center text-sm font-medium tracking-[0.04em] sm:text-base ${STATE_COLOR[state]}`}
+      className={`state-label text-center text-sm font-medium tracking-[0.04em] sm:text-base ${STATE_COLOR[state]}`}
       aria-live="polite"
       data-testid="state-label"
     >
